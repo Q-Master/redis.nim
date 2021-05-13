@@ -34,7 +34,7 @@ type
       discard
     of REDIS_REPLY_STATUS, REDIS_REPLY_STRING, REDIS_REPLY_VERB:
       str: ref string
-    of REDIS_REPLY_ARRAY:
+    of REDIS_REPLY_ARRAY, REDIS_REPLY_PUSH:
       arr: seq[RedisMessage]
     of REDIS_REPLY_MAP:
       map: Table[string, RedisMessage]
@@ -42,8 +42,6 @@ type
       hashSet: HashSet[RedisMessage]
     of REDIS_REPLY_BOOL:
       b: bool
-    of REDIS_REPLY_PUSH:
-      discard
     of REDIS_REPLY_BIGNUM:
       bignum: string
     of REDIS_REPLY_ATTRS:
@@ -103,7 +101,7 @@ proc parseResponse*(redis: Redis, key: bool = false): Future[RedisMessage] {.asy
       result = await processAggregateItem(redis, tp, response[1 .. ^1]);
     of REDIS_REPLY_ATTRS:
       let _ = await processAggregateItem(redis, tp, response[1 .. ^1]);
-    if tp != REDIS_REPLY_ATTRS:
+    if tp notin {REDIS_REPLY_ATTRS, REDIS_REPLY_PUSH}:
       break
 
 template toBiggestInt(item: string): BiggestInt =
@@ -167,7 +165,7 @@ proc processAggregateItem(redis: Redis, resTyp: RedisMessageTypes, item: string)
   result = RedisMessage(messageType: resTyp)
   let arraySize = toBiggestInt(item)
   case resTyp
-  of REDIS_REPLY_ARRAY:
+  of REDIS_REPLY_ARRAY, REDIS_REPLY_PUSH:
     result.arr = @[]
     if arraySize != -1:
       for _ in 0 ..< arraySize:
