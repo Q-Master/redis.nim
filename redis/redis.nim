@@ -1,5 +1,9 @@
+import std/asyncdispatch
 import private/[connection, exceptions, proto]
 
 export connection except readLine, readRawString
 export exceptions
-export proto
+
+proc readResponse*(redis: Redis): Future[RedisMessage] {.async.} =
+  result = await redis.parseResponse()
+
