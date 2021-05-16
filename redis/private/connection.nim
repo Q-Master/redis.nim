@@ -1,4 +1,4 @@
-import std/tables
+import std/[tables, strutils]
 import std/[asyncnet, asyncdispatch]
 
 const
@@ -63,6 +63,10 @@ proc newRedisPool*(host: string, port: int, db: int, username: ref string = nil,
   result.password = password
   result.needAuth = not result.username.isNil
 
+template withRedis*(t: RedisPool, x: untyped) = 
+  var redis = await t.acquire()
+  x
+  redis.release()
 
 proc readLine*(redis: Redis): Future[string] {.async.} =
   result = await redis.sock.recvLine(maxLength = REDIS_READER_MAX_BUF)
@@ -72,6 +76,11 @@ proc readRawString*(redis: Redis, length: int): Future[string] {.async.} =
   let realsize = await redis.sock.recvInto(result.addr, length)
   if realsize < length:
     echo "Raw string read failed"
+
+proc sendLine*(redis: Redis, data: seq[string]) {.async.} =
+  var line = data.join("\r\L")
+  line = line & "\r\L"
+  await redis.sock.send(line)
 
 #------- pvt
 

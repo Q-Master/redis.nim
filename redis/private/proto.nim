@@ -145,6 +145,60 @@ proc prepareRequest*(request: RedisMessage): seq[string] =
   else:
     raise newException(RedisTypeError, "Unsupported type for outgoing requests")
 
+proc encode[T: SomeSignedInt | SomeUnsignedInt](x: T): RedisMessage
+proc encode[T: float | float32 | float64](x: T): RedisMessage
+proc encode(x: string): RedisMessage
+proc encode(x: bool): RedisMessage
+proc encode[T](x: openArray[T]): RedisMessage
+proc encodeCommand*(cmd: string, args: varargs[RedisMessage, encode]): RedisMessage =
+  result = RedisMessage(messageType: REDIS_MESSAGE_ARRAY)
+  for c in cmd.splitWhitespace():
+    result.arr.add(c.encode())
+  for arg in args:
+    result.arr.add(arg)
+
+#[
+proc `$`(msg: RedisMessage): string =
+  case msg.messageType
+  of REDIS_MESSAGE_INTEGER:
+    result = result & $msg.integer
+  of REDIS_MESSAGE_DOUBLE:
+    result = result & $msg.double
+  of REDIS_MESSAGE_SIMPLESTRING, REDIS_MESSAGE_STRING:
+    result = result & msg.str[]
+  of REDIS_MESSAGE_ARRAY:
+    result = result & "["
+    var first = true
+    for elem in msg.arr:
+      if not first:
+        result = result & ", "
+      else:
+        first = false
+      result = result & $elem
+    result = result & "]"
+  of REDIS_MESSAGE_MAP:
+    result = result & "{\n"
+    var first = true
+    result.add("%")
+    result.add($request.map.len)
+    for k,v in request.map:
+      k.encodeString()
+      result.add(v.prepareRequest())
+  of REDIS_MESSAGE_SET:
+    result.add("~")
+    result.add($request.hashSet.len)
+    for elem in request.hashSet:
+      result.add(elem.prepareRequest())
+  of REDIS_MESSAGE_BOOL:
+    result.add("#")
+    result.add(if request.b: "t" else: "f")
+  of REDIS_MESSAGE_VERB:
+    request.str[].encodeString("=")
+  of REDIS_MESSAGE_BIGNUM:
+    result.add("(" & request.bignum)
+  else:
+    raise newException(RedisTypeError, "Unsupported type for outgoing requests")
+]#
 #------- pvt
 
 template toBiggestInt(item: string): BiggestInt =
@@ -233,3 +287,17 @@ proc processAggregateItem(redis: Redis, resTyp: RedisMessageTypes, item: string)
         let value = await redis.parseResponse()
   else:
     raise newException(RedisTypeError, "Wrong type for aggregate item")
+
+proc encode[T: SomeSignedInt | SomeUnsignedInt](x: T): RedisMessage =
+  result = RedisMessage(messageType: REDIS_MESSAGE_INTEGER, integer: x)
+proc encode[T: float | float32 | float64](x: T): RedisMessage =
+  result = RedisMessage(messageType: REDIS_MESSAGE_DOUBLE, double: x)
+proc encode(x: string): RedisMessage =
+  result = RedisMessage(messageType: REDIS_MESSAGE_STRING)
+  result.str[] = x
+proc encode(x: bool): RedisMessage =
+  result = RedisMessage(messageType: REDIS_MESSAGE_BOOL, b: x)
+proc encode[T](x: openArray[T]): RedisMessage =
+  result = RedisMessage(messageType: REDIS_MESSAGE_ARRAY, arr: @[])
+  for v in x:
+    result.arr.add(x.encode())
