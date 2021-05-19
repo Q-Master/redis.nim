@@ -1,5 +1,6 @@
-import std/[tables, strutils]
+import std/[tables, strutils, times]
 import std/[asyncnet, asyncdispatch]
+import ./exceptions
 
 const
   REDIS_READER_MAX_BUF: int = 1024*16
@@ -16,6 +17,7 @@ type
     username: ref string
     password: ref string
     needAuth: bool
+    closing: bool
   
   Redis* = ref RedisObj
   RedisObj* = object of RootObj
@@ -26,27 +28,45 @@ type
     #queue:         TableRef[int32, tuple[cur: Cursor[AsyncMongo], fut: Future[seq[Bson]]] ]
 
 proc newRedis(): Redis
+proc disconnect[T: Redis | RedisObj](redis: var T)
 
-proc acquire*(rconn: RedisPool): Future[Redis] {.async.} =
+proc acquire*(pool: RedisPool, timeout: int = 0): Future[Redis] {.async.} =
   ## Retrieves next non-in-use async socket for request
+  if pool.closing:
+    raise newException(RedisConnectionError, "Connection is safely closing now")
+  let stime = getTime()
   while true:
-    template s: untyped = rconn.pool[rconn.current]
+    template s: untyped = pool.pool[pool.current]
     if s.isNil:
       s = newRedis()
-    if not s.inuse:
-      s.inuse = true
-      if not s.connected:
-        try:
-          await s.sock.connect(rconn.host, rconn.port)
-          s.connected = true
-          #if rconn.needAuth and not s.authenticated:
-            #s.authenticated = await rconn[rconn.authDb()].authenticateScramSha1(rconn.username, rconn.password, s)
-        except OSError:
-          continue
-      return s
-    rconn.current.inc()
-    rconn.current = rconn.current.mod(rconn.pool.len)
-    if rconn.current == 0:
+    try:
+      if not s.inuse:
+        s.inuse = true
+        if not s.connected:
+          let connFut = s.sock.connect(pool.host, pool.port)
+          var success = false
+          if timeout > 0:
+            success = await connFut.withTimeout(timeout)
+          else:
+            await connFut
+            success = true
+          if success:
+            s.connected = true
+            #if pool.needAuth and not s.authenticated:
+              #s.authenticated = await pool[pool.authDb()].authenticateScramSha1(pool.username, pool.password, s)
+          else:
+            s.inuse = false
+            raise newException(RedisConnectionError, "Timeout connecting to redis")
+        return s
+    except OSError:
+      s.inuse = false
+    pool.current.inc()
+    pool.current = pool.current.mod(pool.pool.len)
+    if timeout > 0:
+      let diff = (getTime() - stime).inMilliseconds()
+      if diff > timeout:
+        raise newException(RedisConnectionError, "Timeout connecting to redis")
+    if pool.current == 0:
       await sleepAsync(1)
 
 proc release*(redis: Redis) =
@@ -62,9 +82,23 @@ proc newRedisPool*(host: string, port: int, db: int, username: ref string = nil,
   result.username = username
   result.password = password
   result.needAuth = not result.username.isNil
+  result.closing = false
 
-template withRedis*(t: RedisPool, x: untyped) = 
-  var redis = await t.acquire()
+proc close*(pool: RedisPool) {.async.}=
+  pool.closing = true
+  var closed: bool = false
+  while not closed:
+    closed = true
+    for i in 0 ..< pool.pool.len:
+      template s: untyped = pool.pool[i]
+      if s.inuse:
+        closed = false
+      else:
+        s.disconnect()
+    await sleepAsync(1)
+
+template withRedis*(t: RedisPool, timeout: int = 0, x: untyped) = 
+  var redis {.inject.} = await t.acquire(timeout)
   x
   redis.release()
 
