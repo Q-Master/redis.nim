@@ -106,9 +106,8 @@ proc readLine*(redis: Redis): Future[string] {.async.} =
   result = await redis.sock.recvLine(maxLength = REDIS_READER_MAX_BUF)
 
 proc readRawString*(redis: Redis, length: int): Future[string] {.async.} =
-  result.setLen(length)
-  let realsize = await redis.sock.recvInto(result.addr, length)
-  if realsize < length:
+  result = await redis.sock.recv(length)
+  if result.len < length:
     echo "Raw string read failed"
 
 proc sendLine*(redis: Redis, data: seq[string]) {.async.} =

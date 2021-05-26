@@ -17,6 +17,7 @@ suite "Redis connection":
         connection.release()
       except RedisConnectionError:
         echo "Can't connect to Redis instance"
+        fail()
       await pool.close()
     waitFor(testConnection())
 
@@ -29,5 +30,6 @@ suite "Redis connection":
           echo await redis.readLine()
       except RedisConnectionError:
         echo "Can't connect to Redis instance"
+        fail()
       await pool.close()
     waitFor(testConnection())

@@ -1,5 +1,5 @@
 import std/asyncdispatch
-import std/[strutils, sets, tables]
+import std/[strutils, sets, tables, hashes]
 import ./connection
 import ./exceptions
 
@@ -23,27 +23,27 @@ type
 
   RedisMessage* = ref RedisMessageObj
   RedisMessageObj* = object of RootObj
-    case messageType: RedisMessageTypes
+    case messageType*: RedisMessageTypes
     of REDIS_MESSAGE_ERROR:
-      error: string
+      error*: string
     of REDIS_MESSAGE_INTEGER:
-      integer: int64
+      integer*: int64
     of REDIS_MESSAGE_DOUBLE:
-      double: float
+      double*: float
     of REDIS_MESSAGE_NIL:
       discard
     of REDIS_MESSAGE_SIMPLESTRING, REDIS_MESSAGE_STRING, REDIS_MESSAGE_VERB:
-      str: ref string
+      str*: ref string
     of REDIS_MESSAGE_ARRAY, REDIS_MESSAGE_PUSH:
-      arr: seq[RedisMessage]
+      arr*: seq[RedisMessage]
     of REDIS_MESSAGE_MAP:
-      map: Table[string, RedisMessage]
+      map*: Table[string, RedisMessage]
     of REDIS_MESSAGE_SET:
-      hashSet: HashSet[RedisMessage]
+      hashSet*: HashSet[RedisMessage]
     of REDIS_MESSAGE_BOOL:
-      b: bool
+      b*: bool
     of REDIS_MESSAGE_BIGNUM:
-      bignum: string
+      bignum*: string
     of REDIS_MESSAGE_ATTRS:
       discard
 
@@ -105,6 +105,13 @@ proc parseResponse*(redis: Redis, key: bool = false): Future[RedisMessage] {.asy
       break
 
 
+template encodeString(str: ref string, prefix = "$") =
+  if str.isNil:
+    result.add(prefix & "-1")
+  else:
+    result.add(prefix & $str[].len)
+    result.add(str[])
+
 template encodeString(str: string, prefix = "$") =
   result.add(prefix & $str.len)
   result.add(str)
@@ -119,7 +126,7 @@ proc prepareRequest*(request: RedisMessage): seq[string] =
   of REDIS_MESSAGE_SIMPLESTRING:
     result.add("+" & request.str[])
   of REDIS_MESSAGE_STRING:
-    request.str[].encodeString()
+    request.str.encodeString()
   of REDIS_MESSAGE_ARRAY:
     result.add("*" & $request.arr.len)
     for elem in request.arr:
@@ -139,23 +146,26 @@ proc prepareRequest*(request: RedisMessage): seq[string] =
     result.add("#")
     result.add(if request.b: "t" else: "f")
   of REDIS_MESSAGE_VERB:
-    request.str[].encodeString("=")
+    request.str.encodeString("=")
   of REDIS_MESSAGE_BIGNUM:
     result.add("(" & request.bignum)
   else:
     raise newException(RedisTypeError, "Unsupported type for outgoing requests")
 
-proc encode[T: SomeSignedInt | SomeUnsignedInt](x: T): RedisMessage
-proc encode[T: float | float32 | float64](x: T): RedisMessage
-proc encode(x: string): RedisMessage
-proc encode(x: bool): RedisMessage
-proc encode[T](x: openArray[T]): RedisMessage
-proc encodeCommand*(cmd: string, args: varargs[RedisMessage, encode]): RedisMessage =
-  result = RedisMessage(messageType: REDIS_MESSAGE_ARRAY)
-  for c in cmd.splitWhitespace():
-    result.arr.add(c.encode())
-  for arg in args:
-    result.arr.add(arg)
+proc encodeRedis*[T: SomeSignedInt | SomeUnsignedInt](x: T): RedisMessage
+proc encodeRedis*[T: float | float32 | float64](x: T): RedisMessage
+proc encodeRedis*(x: string): RedisMessage
+proc encodeRedis*(x: bool): RedisMessage
+proc encodeRedis*[T](x: openArray[T]): RedisMessage
+proc encodeCommand*(cmd: string, args: varargs[RedisMessage, encodeRedis]): RedisMessage =
+  if args.len > 0:
+    result = RedisMessage(messageType: REDIS_MESSAGE_ARRAY)
+    for c in cmd.splitWhitespace():
+      result.arr.add(c.encodeRedis())
+    for arg in args:
+      result.arr.add(arg)
+  else:
+    result = cmd.encodeRedis()
 
 #[
 proc `$`(msg: RedisMessage): string =
@@ -201,6 +211,9 @@ proc `$`(msg: RedisMessage): string =
 ]#
 #------- pvt
 
+proc hash*(msg: RedisMessage): Hash =
+  result = cast[Hash](cast[uint](msg) shr 3)
+
 template toBiggestInt(item: string): BiggestInt =
   let tmp = parseBiggestInt(item)
   if tmp < low(int64) or tmp > high(int64):
@@ -210,6 +223,7 @@ template toBiggestInt(item: string): BiggestInt =
 proc processLineItem(resTyp: RedisMessageTypes, item: string, key: bool): RedisMessage =
   if key:
     result = RedisMessage(messageType: REDIS_MESSAGE_STRING)
+    result.str.new()
     result.str[] = item
   else:
     result = RedisMessage(messageType: resTyp)
@@ -239,6 +253,7 @@ proc processLineItem(resTyp: RedisMessageTypes, item: string, key: bool): RedisM
       result.error = item
       raiseException(item)
     of REDIS_MESSAGE_SIMPLESTRING:
+      result.str.new()
       result.str[] = item
     else:
       raise newException(RedisTypeError, "Wrong type for line item")
@@ -252,7 +267,8 @@ proc processBulkItem(redis: Redis, resTyp: RedisMessageTypes, item: string, key:
     result.str = nil
   else:
     let str = await redis.readRawString((stringSize+2).int)
-    result.str[] = str[0 .. ^2]
+    result.str.new()
+    result.str[] = str[0 .. ^3]
     if result.str[].len != stringSize:
       raise newException(RedisProtocolError, "String/verb length is wrong")
     if result.messageType == REDIS_MESSAGE_VERB and str.len < 6 and str[3] != ':':
@@ -288,16 +304,17 @@ proc processAggregateItem(redis: Redis, resTyp: RedisMessageTypes, item: string)
   else:
     raise newException(RedisTypeError, "Wrong type for aggregate item")
 
-proc encode[T: SomeSignedInt | SomeUnsignedInt](x: T): RedisMessage =
+proc encodeRedis*[T: SomeSignedInt | SomeUnsignedInt](x: T): RedisMessage =
   result = RedisMessage(messageType: REDIS_MESSAGE_INTEGER, integer: x)
-proc encode[T: float | float32 | float64](x: T): RedisMessage =
+proc encodeRedis*[T: float | float32 | float64](x: T): RedisMessage =
   result = RedisMessage(messageType: REDIS_MESSAGE_DOUBLE, double: x)
-proc encode(x: string): RedisMessage =
+proc encodeRedis*(x: string): RedisMessage =
   result = RedisMessage(messageType: REDIS_MESSAGE_STRING)
+  result.str.new() 
   result.str[] = x
-proc encode(x: bool): RedisMessage =
+proc encodeRedis*(x: bool): RedisMessage =
   result = RedisMessage(messageType: REDIS_MESSAGE_BOOL, b: x)
-proc encode[T](x: openArray[T]): RedisMessage =
+proc encodeRedis*[T](x: openArray[T]): RedisMessage =
   result = RedisMessage(messageType: REDIS_MESSAGE_ARRAY, arr: @[])
   for v in x:
-    result.arr.add(x.encode())
+    result.arr.add(x.encodeRedis())
