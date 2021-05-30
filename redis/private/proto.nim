@@ -4,7 +4,7 @@ import ./connection
 import ./exceptions
 
 type
-  RedisMessageTypes* = enum
+  RedisMessageKind* = enum
     REDIS_MESSAGE_ERROR,
     REDIS_MESSAGE_SIMPLESTRING,
     REDIS_MESSAGE_INTEGER,
@@ -23,7 +23,7 @@ type
 
   RedisMessage* = ref RedisMessageObj
   RedisMessageObj* = object of RootObj
-    case messageType*: RedisMessageTypes
+    case kind*: RedisMessageKind
     of REDIS_MESSAGE_ERROR:
       error*: string
     of REDIS_MESSAGE_INTEGER:
@@ -41,20 +41,20 @@ type
     of REDIS_MESSAGE_SET:
       hashSet*: HashSet[RedisMessage]
     of REDIS_MESSAGE_BOOL:
-      b*: bool
+      boolean*: bool
     of REDIS_MESSAGE_BIGNUM:
       bignum*: string
     of REDIS_MESSAGE_ATTRS:
       discard
 
-proc processLineItem(resTyp: RedisMessageTypes, item: string, key: bool): RedisMessage
-proc processBulkItem(redis: Redis, resTyp: RedisMessageTypes, item: string, key: bool): Future[RedisMessage] {.async.}
-proc processAggregateItem(redis: Redis, resTyp: RedisMessageTypes, item: string): Future[RedisMessage] {.async.}
+proc processLineItem(resTyp: RedisMessageKind, item: string, key: bool): RedisMessage
+proc processBulkItem(redis: Redis, resTyp: RedisMessageKind, item: string, key: bool): Future[RedisMessage] {.async.}
+proc processAggregateItem(redis: Redis, resTyp: RedisMessageKind, item: string): Future[RedisMessage] {.async.}
 proc parseResponse*(redis: Redis, key: bool = false): Future[RedisMessage] {.async.} =
   while true:
     # We are skipping the ATTRIBUTE type of redis reply always.
     let response = await redis.readLine()
-    var tp: RedisMessageTypes
+    var tp: RedisMessageKind
     case response[0]
     of '-':
       tp = REDIS_MESSAGE_ERROR
@@ -118,7 +118,7 @@ template encodeString(str: string, prefix = "$") =
 
 proc prepareRequest*(request: RedisMessage): seq[string] =
   result = @[]
-  case request.messageType
+  case request.kind
   of REDIS_MESSAGE_INTEGER:
     result.add(":" & $request.integer)
   of REDIS_MESSAGE_DOUBLE:
@@ -144,7 +144,7 @@ proc prepareRequest*(request: RedisMessage): seq[string] =
       result.add(elem.prepareRequest())
   of REDIS_MESSAGE_BOOL:
     result.add("#")
-    result.add(if request.b: "t" else: "f")
+    result.add(if request.boolean: "t" else: "f")
   of REDIS_MESSAGE_VERB:
     request.str.encodeString("=")
   of REDIS_MESSAGE_BIGNUM:
@@ -159,7 +159,7 @@ proc encodeRedis*(x: bool): RedisMessage
 proc encodeRedis*[T](x: openArray[T]): RedisMessage
 proc encodeCommand*(cmd: string, args: varargs[RedisMessage, encodeRedis]): RedisMessage =
   if args.len > 0:
-    result = RedisMessage(messageType: REDIS_MESSAGE_ARRAY)
+    result = RedisMessage(kind: REDIS_MESSAGE_ARRAY)
     for c in cmd.splitWhitespace():
       result.arr.add(c.encodeRedis())
     for arg in args:
@@ -167,48 +167,17 @@ proc encodeCommand*(cmd: string, args: varargs[RedisMessage, encodeRedis]): Redi
   else:
     result = cmd.encodeRedis()
 
-#[
-proc `$`(msg: RedisMessage): string =
-  case msg.messageType
-  of REDIS_MESSAGE_INTEGER:
-    result = result & $msg.integer
-  of REDIS_MESSAGE_DOUBLE:
-    result = result & $msg.double
-  of REDIS_MESSAGE_SIMPLESTRING, REDIS_MESSAGE_STRING:
-    result = result & msg.str[]
-  of REDIS_MESSAGE_ARRAY:
-    result = result & "["
-    var first = true
-    for elem in msg.arr:
-      if not first:
-        result = result & ", "
-      else:
-        first = false
-      result = result & $elem
-    result = result & "]"
-  of REDIS_MESSAGE_MAP:
-    result = result & "{\n"
-    var first = true
-    result.add("%")
-    result.add($request.map.len)
-    for k,v in request.map:
-      k.encodeString()
-      result.add(v.prepareRequest())
-  of REDIS_MESSAGE_SET:
-    result.add("~")
-    result.add($request.hashSet.len)
-    for elem in request.hashSet:
-      result.add(elem.prepareRequest())
-  of REDIS_MESSAGE_BOOL:
-    result.add("#")
-    result.add(if request.b: "t" else: "f")
-  of REDIS_MESSAGE_VERB:
-    request.str[].encodeString("=")
-  of REDIS_MESSAGE_BIGNUM:
-    result.add("(" & request.bignum)
-  else:
-    raise newException(RedisTypeError, "Unsupported type for outgoing requests")
-]#
+
+proc toText(result: var string, redisMessage: RedisMessage, nextLine = true, currIndent = 0, isArray = false)
+
+proc `$`*(redisMessage: RedisMessage): string =
+  result = ""
+  toText(result, redisMessage, false)
+
+proc pretty*(redisMessage: RedisMessage): string =
+  result = ""
+  toText(result, redisMessage, true)
+
 #------- pvt
 
 proc hash*(msg: RedisMessage): Hash =
@@ -220,13 +189,13 @@ template toBiggestInt(item: string): BiggestInt =
     raise newException(RedisProtocolError, "Bad INTEGER value")
   tmp
 
-proc processLineItem(resTyp: RedisMessageTypes, item: string, key: bool): RedisMessage =
+proc processLineItem(resTyp: RedisMessageKind, item: string, key: bool): RedisMessage =
   if key:
-    result = RedisMessage(messageType: REDIS_MESSAGE_STRING)
+    result = RedisMessage(kind: REDIS_MESSAGE_STRING)
     result.str.new()
     result.str[] = item
   else:
-    result = RedisMessage(messageType: resTyp)
+    result = RedisMessage(kind: resTyp)
     case resTyp
     of REDIS_MESSAGE_INTEGER:
       try:
@@ -238,7 +207,7 @@ proc processLineItem(resTyp: RedisMessageTypes, item: string, key: bool): RedisM
     of REDIS_MESSAGE_BOOL:
       if item.len != 1 and item notin ["t", "T", "f", "F"]:
         raise newException(RedisProtocolError, "Bad BOOL value")
-      result.b = item in ["T", "t"]
+      result.boolean = item in ["T", "t"]
     of REDIS_MESSAGE_BIGNUM:
       for i in 0 ..< item.len:
         if i == 0 and item[i] == '-':
@@ -258,8 +227,8 @@ proc processLineItem(resTyp: RedisMessageTypes, item: string, key: bool): RedisM
     else:
       raise newException(RedisTypeError, "Wrong type for line item")
 
-proc processBulkItem(redis: Redis, resTyp: RedisMessageTypes, item: string, key: bool): Future[RedisMessage] {.async.} =
-  result = RedisMessage(messageType: resTyp)
+proc processBulkItem(redis: Redis, resTyp: RedisMessageKind, item: string, key: bool): Future[RedisMessage] {.async.} =
+  result = RedisMessage(kind: resTyp)
   let stringSize = toBiggestInt(item)
   if stringSize == -1:
     if key:
@@ -271,11 +240,11 @@ proc processBulkItem(redis: Redis, resTyp: RedisMessageTypes, item: string, key:
     result.str[] = str[0 .. ^3]
     if result.str[].len != stringSize:
       raise newException(RedisProtocolError, "String/verb length is wrong")
-    if result.messageType == REDIS_MESSAGE_VERB and str.len < 6 and str[3] != ':':
+    if result.kind == REDIS_MESSAGE_VERB and str.len < 6 and str[3] != ':':
       raise newException(RedisProtocolError, "Verbatim string 4 bytes of content type are missing or incorrectly encoded. length is wrong")
 
-proc processAggregateItem(redis: Redis, resTyp: RedisMessageTypes, item: string): Future[RedisMessage] {.async.} =
-  result = RedisMessage(messageType: resTyp)
+proc processAggregateItem(redis: Redis, resTyp: RedisMessageKind, item: string): Future[RedisMessage] {.async.} =
+  result = RedisMessage(kind: resTyp)
   let arraySize = toBiggestInt(item)
   case resTyp
   of REDIS_MESSAGE_ARRAY, REDIS_MESSAGE_PUSH:
@@ -305,16 +274,149 @@ proc processAggregateItem(redis: Redis, resTyp: RedisMessageTypes, item: string)
     raise newException(RedisTypeError, "Wrong type for aggregate item")
 
 proc encodeRedis*[T: SomeSignedInt | SomeUnsignedInt](x: T): RedisMessage =
-  result = RedisMessage(messageType: REDIS_MESSAGE_INTEGER, integer: x)
+  result = RedisMessage(kind: REDIS_MESSAGE_INTEGER, integer: x)
 proc encodeRedis*[T: float | float32 | float64](x: T): RedisMessage =
-  result = RedisMessage(messageType: REDIS_MESSAGE_DOUBLE, double: x)
+  result = RedisMessage(kind: REDIS_MESSAGE_DOUBLE, double: x)
 proc encodeRedis*(x: string): RedisMessage =
-  result = RedisMessage(messageType: REDIS_MESSAGE_STRING)
+  result = RedisMessage(kind: REDIS_MESSAGE_STRING)
   result.str.new() 
   result.str[] = x
 proc encodeRedis*(x: bool): RedisMessage =
-  result = RedisMessage(messageType: REDIS_MESSAGE_BOOL, b: x)
+  result = RedisMessage(kind: REDIS_MESSAGE_BOOL, boolean: x)
 proc encodeRedis*[T](x: openArray[T]): RedisMessage =
-  result = RedisMessage(messageType: REDIS_MESSAGE_ARRAY, arr: @[])
+  result = RedisMessage(kind: REDIS_MESSAGE_ARRAY, arr: @[])
   for v in x:
-    result.arr.add(x.encodeRedis())
+    result.arr.add(v.encodeRedis())
+
+const INDENT = 2
+
+proc indent(s: var string, i: int, nextLine: bool) =
+  if nextLine:
+    s.add(spaces(i))
+
+proc incIndent(curr: int, nextLine: bool): int =
+  if nextLine: 
+    result = curr + INDENT
+  else:
+    result = INDENT
+
+proc nl(s: var string, nextLine: bool) =
+  s.add(if nextLine: "\n" else: " ")
+
+proc escapeString(s: string; result: var string) =
+  result.add("\"")
+  for c in s:
+    case c
+    of '\L': 
+      result.add("\\n")
+    of '\b': 
+      result.add("\\b")
+    of '\f': 
+      result.add("\\f")
+    of '\t': 
+      result.add("\\t")
+    of '\v': 
+      result.add("\\u000b")
+    of '\r': 
+      result.add("\\r")
+    of '"': 
+      result.add("\\\"")
+    of '\0'..'\7': 
+      result.add("\\u000" & $ord(c))
+    of '\14'..'\31': 
+      result.add("\\u00" & toHex(ord(c), 2))
+    of '\\': 
+      result.add("\\\\")
+    else: 
+      result.add(c)
+  result.add("\"")
+
+proc toText(result: var string, redisMessage: RedisMessage, nextLine = true, currIndent = 0, isArray = false) =
+  case redisMessage.kind
+  of REDIS_MESSAGE_STRING, REDIS_MESSAGE_SIMPLESTRING, REDIS_MESSAGE_VERB:
+    if isArray: 
+      result.indent(currIndent, nextLine)
+    escapeString(redisMessage.str[], result)
+  of REDIS_MESSAGE_INTEGER:
+    if isArray: 
+      result.indent(currIndent, nextLine)
+    result.add($redisMessage.integer)
+  of REDIS_MESSAGE_DOUBLE:
+    if isArray: 
+      result.indent(currIndent, nextLine)
+    result.add($redisMessage.double)
+  of REDIS_MESSAGE_BOOL:
+    if isArray: 
+      result.indent(currIndent, nextLine)
+    result.add(if redisMessage.boolean: "true" else: "false")
+  of REDIS_MESSAGE_NIL:
+    if isArray: 
+      result.indent(currIndent, nextLine)
+    result.add("nil")
+  of REDIS_MESSAGE_BIGNUM:
+    if isArray: 
+      result.indent(currIndent, nextLine)
+    result.add(redisMessage.bignum)
+  of REDIS_MESSAGE_ERROR:
+    if isArray: 
+      result.indent(currIndent, nextLine)
+    escapeString(redisMessage.error, result)
+  of REDIS_MESSAGE_ARRAY, REDIS_MESSAGE_PUSH:
+    if isArray: 
+      result.indent(currIndent, nextLine)
+    if redisMessage.arr.len != 0:
+      result.add("[")
+      result.nl(nextLine)
+      var addSep: bool = false
+      for e in redisMessage.arr:
+        if addSep:
+          result.add(",")
+          result.nl(nextLine)
+        addSep = true
+        toText(result, e, nextLine, incIndent(currIndent, nextLine), true)
+      result.nl(nextLine)
+      result.indent(currIndent, nextLine)
+      result.add("]")
+    else: 
+      result.add("[]")
+  of REDIS_MESSAGE_MAP:
+    if isArray: 
+      result.indent(currIndent, nextLine)
+    if redisMessage.map.len != 0:
+      result.add("{")
+      result.nl(nextLine)
+      var addSep: bool = false
+      for k,v in redisMessage.map:
+        if addSep:
+          result.add(",")
+          result.nl(nextLine)
+        addSep = true
+        result.indent(incIndent(currIndent, nextLine), nextLine)
+        escapeString(k, result)
+        result.add(": ")
+        toText(result, v, nextLine, incIndent(currIndent, nextLine))
+      result.nl(nextLine)
+      result.indent(currIndent, nextLine) # indent the same as {
+      result.add("}")
+    else:
+      result.add("{}")
+  of REDIS_MESSAGE_SET:
+    if isArray: 
+      result.indent(currIndent, nextLine)
+    if redisMessage.hashSet.len != 0:
+      result.add("{")
+      result.nl(nextLine)
+      var addSep: bool = false
+      for e in redisMessage.hashSet:
+        if addSep:
+          result.add(",")
+          result.nl(nextLine)
+        addSep = true
+        toText(result, e, nextLine, incIndent(currIndent, nextLine), true)
+      result.nl(nextLine)
+      result.indent(currIndent, nextLine)
+      result.add("}")
+    else: 
+      result.add("{}")
+  else:
+    discard
