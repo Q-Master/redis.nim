@@ -28,7 +28,8 @@ const MODULE_EXPORTS_DATA_TYPES_ERROR = "Error unloading module: the module expo
 proc raiseException*(error: string) =
   let splt = error.split(" ", 1)
   let errCode = splt[0]
-  let errorString = splt[1] 
+  let errorString = splt[1]
+  #echo errCode, errorString
   if errCode == "ERR":
     if errorString == MAX_NUMBER_OF_CLIENTS_REACHED:
       raise newException(RedisConnectionError, errorString)

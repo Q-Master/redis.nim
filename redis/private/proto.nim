@@ -1,5 +1,5 @@
 import std/asyncdispatch
-import std/[strutils, sets, tables, hashes]
+import std/[strutils, sets, tables, hashes, json]
 import ./connection
 import ./exceptions
 
@@ -95,15 +95,15 @@ proc parseResponse*(redis: Redis, key: bool = false): Future[RedisMessage] {.asy
     case tp
     of REDIS_MESSAGE_ERROR, REDIS_MESSAGE_SIMPLESTRING, REDIS_MESSAGE_INTEGER, REDIS_MESSAGE_DOUBLE, REDIS_MESSAGE_NIL, REDIS_MESSAGE_BOOL, REDIS_MESSAGE_BIGNUM:
       result = processLineItem(tp, response[1 .. ^1], key);
+      break
     of REDIS_MESSAGE_STRING, REDIS_MESSAGE_VERB:
       result = await processBulkItem(redis, tp, response[1 .. ^1], key);
-    of REDIS_MESSAGE_ARRAY, REDIS_MESSAGE_MAP, REDIS_MESSAGE_SET, REDIS_MESSAGE_PUSH:
-      result = await processAggregateItem(redis, tp, response[1 .. ^1]);
-    of REDIS_MESSAGE_ATTRS:
-      let _ = await processAggregateItem(redis, tp, response[1 .. ^1]);
-    if tp notin {REDIS_MESSAGE_ATTRS, REDIS_MESSAGE_PUSH}:
       break
-
+    of REDIS_MESSAGE_ARRAY, REDIS_MESSAGE_MAP, REDIS_MESSAGE_SET:
+      result = await processAggregateItem(redis, tp, response[1 .. ^1]);
+      break
+    of REDIS_MESSAGE_ATTRS, REDIS_MESSAGE_PUSH:
+      let _ = await processAggregateItem(redis, tp, response[1 .. ^1]);
 
 template encodeString(str: ref string, prefix = "$") =
   if str.isNil:
@@ -158,15 +158,12 @@ proc encodeRedis*(x: string): RedisMessage
 proc encodeRedis*(x: bool): RedisMessage
 proc encodeRedis*[T](x: openArray[T]): RedisMessage
 proc encodeCommand*(cmd: string, args: varargs[RedisMessage, encodeRedis]): RedisMessage =
+  result = RedisMessage(kind: REDIS_MESSAGE_ARRAY)
+  for c in cmd.splitWhitespace():
+    result.arr.add(c.encodeRedis())
   if args.len > 0:
-    result = RedisMessage(kind: REDIS_MESSAGE_ARRAY)
-    for c in cmd.splitWhitespace():
-      result.arr.add(c.encodeRedis())
     for arg in args:
       result.arr.add(arg)
-  else:
-    result = cmd.encodeRedis()
-
 
 proc toText(result: var string, redisMessage: RedisMessage, nextLine = true, currIndent = 0, isArray = false)
 
@@ -177,6 +174,40 @@ proc `$`*(redisMessage: RedisMessage): string =
 proc pretty*(redisMessage: RedisMessage): string =
   result = ""
   toText(result, redisMessage, true)
+
+proc toJson*(redisMessage: RedisMessage): JsonNode =
+  case redisMessage.kind
+  of REDIS_MESSAGE_STRING, REDIS_MESSAGE_SIMPLESTRING, REDIS_MESSAGE_VERB:
+    if redisMessage.str.isNil:
+      result = newJNull()
+    else:
+      result = newJString(redisMessage.str[])
+  of REDIS_MESSAGE_ERROR:
+    result = newJString(redisMessage.error)
+  of REDIS_MESSAGE_INTEGER:
+    result = newJInt(redisMessage.integer)
+  of REDIS_MESSAGE_DOUBLE:
+    result = newJFloat(redisMessage.double)
+  of REDIS_MESSAGE_BOOL:
+    result = newJBool(redisMessage.boolean)
+  of REDIS_MESSAGE_NIL:
+    result = newJNull()
+  of REDIS_MESSAGE_ARRAY, REDIS_MESSAGE_PUSH:
+    result = newJArray()
+    for subMsg in redisMessage.arr:
+      result.add(subMsg.toJson())
+  of REDIS_MESSAGE_SET:
+    result = newJArray()
+    for subMsg in redisMessage.hashSet:
+      result.add(subMsg.toJson())
+  of REDIS_MESSAGE_MAP:
+    result = newJObject()
+    for k,v in redisMessage.map:
+      result[k] = v.toJson()
+  of REDIS_MESSAGE_BIGNUM:
+    result = newJString(redisMessage.bignum)
+  of REDIS_MESSAGE_ATTRS:
+    result = newJNull()
 
 #------- pvt
 

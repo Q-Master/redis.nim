@@ -1,6 +1,6 @@
-import std/[tables, strutils, times]
-import std/[asyncnet, asyncdispatch]
+import std/[tables, strutils, times, asyncdispatch]
 import ./exceptions
+import ./buffered_socket
 
 const
   REDIS_READER_MAX_BUF: int = 1024*16
@@ -24,7 +24,7 @@ type
     inuse: bool
     authenticated: bool
     connected: bool
-    sock: AsyncSocket
+    sock: AsyncBufferedSocket
     #queue:         TableRef[int32, tuple[cur: Cursor[AsyncMongo], fut: Future[seq[Bson]]] ]
 
 proc newRedis(): Redis
@@ -91,10 +91,11 @@ proc close*(pool: RedisPool) {.async.}=
     closed = true
     for i in 0 ..< pool.pool.len:
       template s: untyped = pool.pool[i]
-      if s.inuse:
-        closed = false
-      else:
-        s.disconnect()
+      if not s.isNil:
+        if s.inuse:
+          closed = false
+        else:
+          s.disconnect()
     await sleepAsync(1)
 
 template withRedis*(t: RedisPool, timeout: int = 0, x: untyped) = 
@@ -103,7 +104,7 @@ template withRedis*(t: RedisPool, timeout: int = 0, x: untyped) =
   redis.release()
 
 proc readLine*(redis: Redis): Future[string] {.async.} =
-  result = await redis.sock.recvLine(maxLength = REDIS_READER_MAX_BUF)
+  result = await redis.sock.recvLine(maxLen = REDIS_READER_MAX_BUF)
 
 proc readRawString*(redis: Redis, length: int): Future[string] {.async.} =
   result = await redis.sock.recv(length)
@@ -113,8 +114,11 @@ proc readRawString*(redis: Redis, length: int): Future[string] {.async.} =
 proc sendLine*(redis: Redis, data: seq[string]) {.async.} =
   var line = data.join("\r\L")
   line = line & "\r\L"
-  await redis.sock.send(line)
+  #echo "CMD: ", line
+  let size = await redis.sock.send(line)
 
+
+proc needsAuth*(redis: Redis): bool = redis.needsAuth
 #------- pvt
 
 proc disconnect[T: Redis | RedisObj](redis: var T) =
@@ -129,10 +133,9 @@ proc `=destroy`(redis: var RedisObj) =
     redis.disconnect()
 
 proc newRedis(): Redis =
-  ## Constructor for "locked" socket
   result.new()
   result.inuse = false
   result.authenticated = false
   result.connected = false
-  result.sock = newAsyncSocket()
+  result.sock = newAsyncBufferedSocket(bufSize = REDIS_READER_MAX_BUF)
   #result.queue = newTable[ int32, tuple[cur: Cursor[AsyncMongo], fut: Future[seq[Bson]]] ]()
