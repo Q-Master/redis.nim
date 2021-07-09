@@ -77,7 +77,6 @@ type
     redir*: int64
     user*: string
     
-
 proc auth*(redis: Redis, password: string, login: string = "") {.async.} =
   let res = (if login.len == 0: await redis.cmd("AUTH", password) else: await redis.cmd("AUTH", login, password))
   if res.kind == REDIS_MESSAGE_ERROR:
@@ -88,85 +87,20 @@ proc clientCaching*(redis: Redis, enabled: bool) {.async.} =
   if res.str[] != "OK":
     raise newException(RedisCommandError, "Wrong answer to CLIENT CACHING")
 
-proc clientGetRedir*(redis: Redis, args: varargs[RedisMessage, encodeRedis]): Future[RedisMessage] {.async.} =
-  discard
-#[
-id=3 addr=127.0.0.1:59192 laddr=127.0.0.1:6379 fd=8 name= age=5 idle=0 flags=N db=0 sub=0 psub=0 multi=-1 qbuf=26 qbuf-free=40928 
-argv-mem=10 obl=0 oll=0 omem=0 tot-mem=61466 events=r cmd=client user=default redir=-1
-Return value
-Bulk string reply: a unique string, formatted as follows:
-  One client connection per line (separated by LF)
-  Each line is composed of a succession of property=value fields separated by a space character.
-
-Here is the meaning of the fields:
-  flags: client flags (see below)
-  events: file descriptor events (see below)
-]#
-template tohp(hp: string): HostPort =
-  let aport = kv[1].split(':')
-  HostPort(host: aport[0], port: Port(aport[1].parseInt()))
-
-proc parseClientInfo(line: string): ClientInfo =
-  result.new()
-  let params = line.split(' ')
-  for param in params:
-    let kv = param.split('=', 1)
-    case kv[0]
-    of "id":
-      result.id = kv[1].parseInt().uint64
-    of "name":
-      result.name = kv[1]
-    of "addr":
-      result.caddr = tohp(kv[1])
-    of "laddr":
-      result.laddr = tohp(kv[1])
-    of "fd":
-      result.fd = kv[1].parseInt()
-    of "age":
-      result.age = initDuration(seconds=kv[1].parseInt())
-    of "idle":
-      result.idle = initDuration(seconds=kv[1].parseInt())
-    of "db":
-      result.db = kv[1].parseInt()
-    of "sub":
-      result.sub = kv[1].parseInt()
-    of "psub":
-      result.psub = kv[1].parseInt()
-    of "multi":
-      result.multi = kv[1].parseInt()
-    of "qbuf":
-      result.qbuf = kv[1].parseInt().uint
-    of "qbuf-free":
-      result.qbufFree = kv[1].parseInt().uint64
-    of "obl":
-      result.obl = kv[1].parseInt().uint64
-    of "oll":
-      result.oll = kv[1].parseInt().uint
-    of "omem":
-      result.omem = kv[1].parseInt().uint64
-    of "cmd":
-      result.cmd = kv[1]
-    of "argv-mem":
-      result.argvMem = kv[1].parseInt().uint64
-    of "tot-mem":
-      result.totMem = kv[1].parseInt().uint64
-    of "redir":
-      result.redir = kv[1].parseInt()
-    of "user":
-      result.user = kv[1]
-    else:
-      discard
-
-proc clientInfo*(redis: Redis): Future[ClientInfo] {.async.} =
-  let res = await redis.cmd("CLIENT INFO")
-  res.str[].stripLineEnd()
-  result = res.str[].parseClientInfo()
+proc clientGetRedir*(redis: Redis): Future[int64] {.async.} =
+  let res = await redis.cmd("CLIENT GETREDIR")
+  result = res.integer
 
 const typeToStringType = {
   CLIENT_TYPE_MASTER: "master",
   CLIENT_TYPE_NORMAL: "normal",
   CLIENT_TYPE_PUBSUB: "pubsub",
   CLIENT_TYPE_REPLICA: "replica"}.toTable()
+proc parseClientInfo(line: string): ClientInfo
+proc clientInfo*(redis: Redis): Future[ClientInfo] {.async.} =
+  let res = await redis.cmd("CLIENT INFO")
+  res.str[].stripLineEnd()
+  result = res.str[].parseClientInfo()
 
 proc clientList*(redis: Redis, clientType: ClientType = CLIENT_TYPE_ALL, clientIDs: seq[int64] = @[]): Future[seq[ClientInfo]] {.async.} =
   result = @[]
@@ -183,14 +117,15 @@ proc clientList*(redis: Redis, clientType: ClientType = CLIENT_TYPE_ALL, clientI
   for str in res.str[].split('\n'):
     result.add(str.parseClientInfo())
 
-proc clientID*(redis: Redis, args: varargs[RedisMessage, encodeRedis]): Future[RedisMessage] {.async.} =
-  discard
+proc clientID*(redis: Redis): Future[uint64] {.async.} =
+  let res = await redis.cmd("CLIENT ID")
+  result = res.integer.uint64
 
 proc clientKill*(redis: Redis, args: varargs[RedisMessage, encodeRedis]): Future[RedisMessage] {.async.} =
-  discard
+  raise newException(RedisCommandNotYetImplementedError, "CLIENT KILL is not implemented yet")
 
 proc clientReply*(redis: Redis, args: varargs[RedisMessage, encodeRedis]): Future[RedisMessage] {.async.} =
-  discard
+  raise newException(RedisCommandNotYetImplementedError, "CLIENT REPLY is not implemented yet")
 
 proc clientSetName*(redis: Redis, name: string) {.async.} =
   let res = await redis.cmd("CLIENT SETNAME", name)
@@ -205,17 +140,19 @@ proc clientGetName*(redis: Redis): Future[ref string] {.async.} =
     result = res.str
 
 proc clientTracking*(redis: Redis, args: varargs[RedisMessage, encodeRedis]): Future[RedisMessage] {.async.} =
-  discard
+  raise newException(RedisCommandNotYetImplementedError, "CLIENT TRACKING is not implemented yet")
+
 proc clientTrackingInfo*(redis: Redis, args: varargs[RedisMessage, encodeRedis]): Future[RedisMessage] {.async.} =
-  discard
+  raise newException(RedisCommandNotYetImplementedError, "CLIENT TRACKING INFO is not implemented yet")
 
 proc clientUnblock*(redis: Redis, args: varargs[RedisMessage, encodeRedis]): Future[RedisMessage] {.async.} =
-  discard
+  raise newException(RedisCommandNotYetImplementedError, "CLIENT UNBLOCK is not implemented yet")
 
 proc clientPause*(redis: Redis, args: varargs[RedisMessage, encodeRedis]): Future[RedisMessage] {.async.} =
-  discard
+  raise newException(RedisCommandNotYetImplementedError, "CLIENT PAUSE is not implemented yet")
+
 proc clientUnpause*(redis: Redis, args: varargs[RedisMessage, encodeRedis]): Future[RedisMessage] {.async.} =
-  discard
+  raise newException(RedisCommandNotYetImplementedError, "CLIENT UNPAUSE is not implemented yet")
 
 proc echo*(redis: Redis, msg: string): Future[string] {.async.} =
   let res = await redis.cmd("ECHO", msg)
@@ -290,3 +227,59 @@ proc select*(redis: Redis, db: int = 0): Future[RedisMessage] {.async.} =
   let res = await redis.cmd("SELECT", db)
   if res.str[] != "OK":
     raise newException(RedisCommandError, "Unexpected reply for SELECT")
+
+#------- pvt
+template tohp(hp: string): HostPort =
+  let aport = kv[1].split(':')
+  HostPort(host: aport[0], port: Port(aport[1].parseInt()))
+
+proc parseClientInfo(line: string): ClientInfo =
+  result.new()
+  let params = line.split(' ')
+  for param in params:
+    let kv = param.split('=', 1)
+    case kv[0]
+    of "id":
+      result.id = kv[1].parseInt().uint64
+    of "name":
+      result.name = kv[1]
+    of "addr":
+      result.caddr = tohp(kv[1])
+    of "laddr":
+      result.laddr = tohp(kv[1])
+    of "fd":
+      result.fd = kv[1].parseInt()
+    of "age":
+      result.age = initDuration(seconds=kv[1].parseInt())
+    of "idle":
+      result.idle = initDuration(seconds=kv[1].parseInt())
+    of "db":
+      result.db = kv[1].parseInt()
+    of "sub":
+      result.sub = kv[1].parseInt()
+    of "psub":
+      result.psub = kv[1].parseInt()
+    of "multi":
+      result.multi = kv[1].parseInt()
+    of "qbuf":
+      result.qbuf = kv[1].parseInt().uint
+    of "qbuf-free":
+      result.qbufFree = kv[1].parseInt().uint64
+    of "obl":
+      result.obl = kv[1].parseInt().uint64
+    of "oll":
+      result.oll = kv[1].parseInt().uint
+    of "omem":
+      result.omem = kv[1].parseInt().uint64
+    of "cmd":
+      result.cmd = kv[1]
+    of "argv-mem":
+      result.argvMem = kv[1].parseInt().uint64
+    of "tot-mem":
+      result.totMem = kv[1].parseInt().uint64
+    of "redir":
+      result.redir = kv[1].parseInt()
+    of "user":
+      result.user = kv[1]
+    else:
+      discard
