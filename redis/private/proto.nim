@@ -1,5 +1,5 @@
 import std/asyncdispatch
-import std/[strutils, sets, tables, hashes, json]
+import std/[strutils, sets, tables, hashes, json, options]
 import ./connection
 import ./exceptions
 
@@ -33,7 +33,7 @@ type
     of REDIS_MESSAGE_NIL:
       discard
     of REDIS_MESSAGE_SIMPLESTRING, REDIS_MESSAGE_STRING, REDIS_MESSAGE_VERB:
-      str*: ref string
+      str*: Option[string]
     of REDIS_MESSAGE_ARRAY, REDIS_MESSAGE_PUSH:
       arr*: seq[RedisMessage]
     of REDIS_MESSAGE_MAP:
@@ -105,12 +105,13 @@ proc parseResponse*(redis: Redis, key: bool = false): Future[RedisMessage] {.asy
     of REDIS_MESSAGE_ATTRS, REDIS_MESSAGE_PUSH:
       let _ = await processAggregateItem(redis, tp, response[1 .. ^1]);
 
-template encodeString(str: ref string, prefix = "$") =
-  if str.isNil:
-    result.add(prefix & "-1")
+template encodeString(str: Option[string], prefix = "$") =
+  if str.isSome:
+    let s = str.get()
+    result.add(prefix & $s.len)
+    result.add(s)
   else:
-    result.add(prefix & $str[].len)
-    result.add(str[])
+    result.add(prefix & "-1")
 
 template encodeString(str: string, prefix = "$") =
   result.add(prefix & $str.len)
@@ -124,7 +125,10 @@ proc prepareRequest*(request: RedisMessage): seq[string] =
   of REDIS_MESSAGE_DOUBLE:
     result.add("," & $request.double)
   of REDIS_MESSAGE_SIMPLESTRING:
-    result.add("+" & request.str[])
+    if request.str.isSome:
+      result.add("+" & request.str.get())
+    else:
+      result.add("+" & "")
   of REDIS_MESSAGE_STRING:
     request.str.encodeString()
   of REDIS_MESSAGE_ARRAY:
@@ -178,10 +182,10 @@ proc pretty*(redisMessage: RedisMessage): string =
 proc toJson*(redisMessage: RedisMessage): JsonNode =
   case redisMessage.kind
   of REDIS_MESSAGE_STRING, REDIS_MESSAGE_SIMPLESTRING, REDIS_MESSAGE_VERB:
-    if redisMessage.str.isNil:
-      result = newJNull()
+    if redisMessage.str.isSome:
+      result = newJString(redisMessage.str.get())
     else:
-      result = newJString(redisMessage.str[])
+      result = newJNull()
   of REDIS_MESSAGE_ERROR:
     result = newJString(redisMessage.error)
   of REDIS_MESSAGE_INTEGER:
@@ -223,8 +227,7 @@ template toBiggestInt(item: string): BiggestInt =
 proc processLineItem(resTyp: RedisMessageKind, item: string, key: bool): RedisMessage =
   if key:
     result = RedisMessage(kind: REDIS_MESSAGE_STRING)
-    result.str.new()
-    result.str[] = item
+    result.str = item.option
   else:
     result = RedisMessage(kind: resTyp)
     case resTyp
@@ -253,8 +256,7 @@ proc processLineItem(resTyp: RedisMessageKind, item: string, key: bool): RedisMe
       result.error = item
       raiseException(item)
     of REDIS_MESSAGE_SIMPLESTRING:
-      result.str.new()
-      result.str[] = item
+      result.str = item.option()
     else:
       raise newException(RedisTypeError, "Wrong type for line item")
 
@@ -264,12 +266,12 @@ proc processBulkItem(redis: Redis, resTyp: RedisMessageKind, item: string, key: 
   if stringSize == -1:
     if key:
       raise newException(RedisProtocolError, "Map key can't be nil")
-    result.str = nil
+    result.str = string.none()
   else:
     let str = await redis.readRawString((stringSize+2).int)
-    result.str.new()
-    result.str[] = str[0 .. ^3]
-    if result.str[].len != stringSize:
+    let s = str[0 .. ^3]
+    result.str = s.option()
+    if s.len != stringSize:
       raise newException(RedisProtocolError, "String/verb length is wrong")
     if result.kind == REDIS_MESSAGE_VERB and str.len < 6 and str[3] != ':':
       raise newException(RedisProtocolError, "Verbatim string 4 bytes of content type are missing or incorrectly encoded. length is wrong")
@@ -289,7 +291,7 @@ proc processAggregateItem(redis: Redis, resTyp: RedisMessageKind, item: string):
       for _ in 0 ..< arraySize:
         let key = await redis.parseResponse(key = true)
         let value = await redis.parseResponse()
-        result.map[key.str[]] = value
+        result.map[key.str.get] = value
   of REDIS_MESSAGE_SET:
     result.hashSet = initHashSet[RedisMessage]()
     if arraySize != -1:
@@ -310,8 +312,7 @@ proc encodeRedis*[T: float | float32 | float64](x: T): RedisMessage =
   result = RedisMessage(kind: REDIS_MESSAGE_DOUBLE, double: x)
 proc encodeRedis*(x: string): RedisMessage =
   result = RedisMessage(kind: REDIS_MESSAGE_STRING)
-  result.str.new() 
-  result.str[] = x
+  result.str = x.option
 proc encodeRedis*(x: bool): RedisMessage =
   result = RedisMessage(kind: REDIS_MESSAGE_BOOL, boolean: x)
 proc encodeRedis*[T](x: openArray[T]): RedisMessage =
@@ -367,7 +368,7 @@ proc toText(result: var string, redisMessage: RedisMessage, nextLine = true, cur
   of REDIS_MESSAGE_STRING, REDIS_MESSAGE_SIMPLESTRING, REDIS_MESSAGE_VERB:
     if isArray: 
       result.indent(currIndent, nextLine)
-    escapeString(redisMessage.str[], result)
+    escapeString(redisMessage.str.get, result)
   of REDIS_MESSAGE_INTEGER:
     if isArray: 
       result.indent(currIndent, nextLine)

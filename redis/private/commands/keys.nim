@@ -1,4 +1,4 @@
-import std/[asyncdispatch, strutils, tables, times, macros]
+import std/[asyncdispatch, strutils, tables, times, macros, options]
 import ./cmd
 #import ../exceptions
 
@@ -15,11 +15,11 @@ import ./cmd
     MIGRATE
     *MOVE
     OBJECT
-    PERSIST
-    PEXPIRE
-    PEXPIREAT
-    PEXPIRETIME
-    PTTL
+    *PERSIST
+    *PEXPIRE
+    *PEXPIREAT
+    *PEXPIRETIME
+    *PTTL
     RANDOMKEY
     RENAME
     RENAMENX
@@ -57,7 +57,7 @@ template del*(redis: Redis, keys: varargs[string, `$`]): untyped =
 
 proc dump*(redis: Redis, key: string): Future[string] {.async.} =
   let res = await redis.cmd("DUMP", key)
-  result = res.str[]
+  result = res.str.get("")
 
 template exists*(redis: Redis, keys: varargs[string, `$`]): untyped =
   block:
@@ -70,8 +70,8 @@ template exists*(redis: Redis, keys: varargs[string, `$`]): untyped =
       result = res.integer.int
     realExists()
 
-proc expire*(redis: Redis, key: string, timeout: int): Future[bool] {.async.} =
-  let res = await redis.cmd("EXPIRE", key, timeout)
+proc expire*(redis: Redis, key: string, timeout: Duration): Future[bool] {.async.} =
+  let res = await redis.cmd("EXPIRE", key, timeout.inSeconds)
   result = (res.integer == 1)
 
 proc expireAt*(redis: Redis, key: string, timeout: Time | DateTime): Future[bool] {.async.} =
@@ -91,9 +91,34 @@ proc keys*(redis: Redis, pattern: string): Future[seq[string]] {.async.} =
   result = @[]
   let res = await redis.cmd("KEYS", pattern)
   for key in res.arr:
-    if not key.str.isNil:
-      result.add(key.str[])
+    if key.str.isSome:
+      result.add(key.str.get())
 
 proc move*(redis:Redis, key: string, db: int): Future[bool] {.async.} =
   let res = await redis.cmd("MOVE", key, db)
   result = (res.integer == 1)
+
+proc persist*(redis:Redis, key: string): Future[bool] {.async.} =
+  let res = await redis.cmd("PERSIST", key)
+  result = (res.integer == 1)
+
+proc pexpire*(redis:Redis, key: string, timeout: Duration): Future[bool] {.async.} =
+  let res = await redis.cmd("PEXPIRE", key, timeout.inMilliseconds)
+  result = (res.integer == 1)
+
+proc pexpireAt*(redis: Redis, key: string, timeout: Time | DateTime): Future[bool] {.async.} =
+  var ts: float
+  when timeout is Time:
+    ts = timeout.toUnixFloat()
+  else:
+    ts = timeout.toTime().toUnixFloat()
+  let res = await redis.cmd("PEXPIREAT", key, (ts*1000).int64)
+  result = (res.integer == 1)
+
+proc pexpireTime*(redis: Redis, key: string): Future[Time] {.async.} =
+  let res = await redis.cmd("PEXPIRETIME", key)
+  result = (res.integer.float/1000).fromUnixFloat()
+
+proc pTTL*(redis: Redis, key: string): Future[Duration] {.async.} =
+  let res = await redis.cmd("PTTL", key)
+  result = initDuration(milliseconds = res.integer)

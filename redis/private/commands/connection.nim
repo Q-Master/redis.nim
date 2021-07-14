@@ -1,4 +1,4 @@
-import std/[asyncdispatch, strutils, tables, times]
+import std/[asyncdispatch, strutils, tables, times, options]
 import ./cmd
 import ../connection
 import ../proto
@@ -84,7 +84,7 @@ proc auth*(redis: Redis, password: string, login: string = "") {.async.} =
 
 proc clientCaching*(redis: Redis, enabled: bool) {.async.} =
   let res = await redis.cmd("CLIENT CACHING", (if enabled: "YES" else: "NO"))
-  if res.str[] != "OK":
+  if res.str.get("") != "OK":
     raise newException(RedisCommandError, "Wrong answer to CLIENT CACHING")
 
 proc clientGetRedir*(redis: Redis): Future[int64] {.async.} =
@@ -99,8 +99,9 @@ const typeToStringType = {
 proc parseClientInfo(line: string): ClientInfo
 proc clientInfo*(redis: Redis): Future[ClientInfo] {.async.} =
   let res = await redis.cmd("CLIENT INFO")
-  res.str[].stripLineEnd()
-  result = res.str[].parseClientInfo()
+  var str = res.str.get("")
+  str.stripLineEnd()
+  result = str.parseClientInfo()
 
 proc clientList*(redis: Redis, clientType: ClientType = CLIENT_TYPE_ALL, clientIDs: seq[int64] = @[]): Future[seq[ClientInfo]] {.async.} =
   result = @[]
@@ -113,9 +114,10 @@ proc clientList*(redis: Redis, clientType: ClientType = CLIENT_TYPE_ALL, clientI
     for id in clientIDs:
       args.add(id.encodeRedis())
   let res = await redis.cmd("CLIENT LIST", args = args)
-  res.str[].stripLineEnd()
-  for str in res.str[].split('\n'):
-    result.add(str.parseClientInfo())
+  var str = res.str.get("")
+  str.stripLineEnd()
+  for s in str.split('\n'):
+    result.add(s.parseClientInfo())
 
 proc clientID*(redis: Redis): Future[uint64] {.async.} =
   let res = await redis.cmd("CLIENT ID")
@@ -129,13 +131,13 @@ proc clientReply*(redis: Redis, args: varargs[RedisMessage, encodeRedis]): Futur
 
 proc clientSetName*(redis: Redis, name: string) {.async.} =
   let res = await redis.cmd("CLIENT SETNAME", name)
-  if res.str[] != "OK":
+  if res.str.get("") != "OK":
     raise newException(RedisCommandError, "Wrong answer to CLIENT SETNAME")
 
-proc clientGetName*(redis: Redis): Future[ref string] {.async.} =
+proc clientGetName*(redis: Redis): Future[Option[string]] {.async.} =
   let res = await redis.cmd("CLIENT GETNAME")
   if res.kind == REDIS_MESSAGE_NIL:
-    result = nil
+    result = string.none
   else:
     result = res.str
 
@@ -156,7 +158,7 @@ proc clientUnpause*(redis: Redis, args: varargs[RedisMessage, encodeRedis]): Fut
 
 proc echo*(redis: Redis, msg: string): Future[string] {.async.} =
   let res = await redis.cmd("ECHO", msg)
-  result = res.str[]
+  result = res.str.get("")
 
 proc hello*(redis: Redis, args: varargs[RedisMessage, encodeRedis]): Future[RedisHello] {.async.} =
   let res = await redis.cmd("HELLO", args)
@@ -164,24 +166,24 @@ proc hello*(redis: Redis, args: varargs[RedisMessage, encodeRedis]): Future[Redi
   case res.kind
   of REDIS_MESSAGE_ARRAY:
     # RESP2 reply
-    result.server = res.arr[1].str[]
-    result.version = res.arr[3].str[]
+    result.server = res.arr[1].str.get()
+    result.version = res.arr[3].str.get()
     result.proto = res.arr[5].integer.int
     result.id = res.arr[7].integer.int
-    result.mode =  res.arr[9].str[]
-    result.role =  res.arr[11].str[]
+    result.mode =  res.arr[9].str.get()
+    result.role =  res.arr[11].str.get()
     for m in res.arr[13].arr:
-      result.modules.add(m.str[])
+      result.modules.add(m.str.get())
   of REDIS_MESSAGE_MAP:
     # RESP3 reply
-    result.server = res.map["server"].str[]
-    result.version = res.map["version"].str[]
+    result.server = res.map["server"].str.get()
+    result.version = res.map["version"].str.get()
     result.proto = res.map["proto"].integer.int
     result.id = res.map["id"].integer.int
-    result.mode =  res.map["mode"].str[]
-    result.role =  res.map["role"].str[]
+    result.mode =  res.map["mode"].str.get()
+    result.role =  res.map["role"].str.get()
     for m in res.map["modules"].arr:
-      result.modules.add(m.str[])
+      result.modules.add(m.str.get())
   else:
     raise newException(RedisCommandError, "Unexpected reply for HELLO")
 
@@ -194,38 +196,38 @@ proc ping*(redis: Redis, msg: string = ""): Future[string] {.async.} =
   case res.kind
   of REDIS_MESSAGE_SIMPLESTRING, REDIS_MESSAGE_STRING:
     if msg.len > 0:
-      result = res.str[]
+      result = res.str.get()
     else:
-      if res.str[] == "PONG":
+      if res.str.get() == "PONG":
         result = ""
       else:
-        raise newException(RedisCommandError, "Wrong answer to PING: " & res.str[])
+        raise newException(RedisCommandError, "Wrong answer to PING: " & res.str.get())
   of REDIS_MESSAGE_ARRAY:
-    if res.arr[0].str[] == "PONG":
+    if res.arr[0].str.get() == "PONG":
       if msg.len > 0:
-        result = res.arr[1].str[]
+        result = res.arr[1].str.get()
       else:
         result = ""
     else:
-      raise newException(RedisCommandError, "Wrong answer to PING: " & res.arr[0].str[])
+      raise newException(RedisCommandError, "Wrong answer to PING: " & res.arr[0].str.get())
   else:
-    raise newException(RedisCommandError, "Wrong answer to PING: " & (if res.kind == REDIS_MESSAGE_STRING: res.str[] else: "Unknown"))
+    raise newException(RedisCommandError, "Wrong answer to PING: " & (if res.kind == REDIS_MESSAGE_STRING: res.str.get() else: "Unknown (type: " & $res.kind & ")"))
 
 proc quit*(redis: Redis) {.async.} =
   let res = await redis.cmd("QUIT")
-  if res.str[] != "OK":
+  if res.str.get("") != "OK":
     raise newException(RedisCommandError, "Unexpected reply for QUIT")
 
 proc reset*(redis: Redis): Future[RedisMessage] {.async.} =
   let res = await redis.cmd("RESET")
-  if res.str[] != "RESET":
+  if res.str.get("") != "RESET":
     raise newException(RedisCommandError, "Unexpected reply for RESET")
   if redis.needsAuth:
     raise newException(RedisAuthError, "Connection must be reauthenticated")
 
 proc select*(redis: Redis, db: int = 0): Future[RedisMessage] {.async.} =
   let res = await redis.cmd("SELECT", db)
-  if res.str[] != "OK":
+  if res.str.get("") != "OK":
     raise newException(RedisCommandError, "Unexpected reply for SELECT")
 
 #------- pvt
