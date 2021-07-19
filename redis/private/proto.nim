@@ -46,6 +46,37 @@ type
       bignum*: string
     of REDIS_MESSAGE_ATTRS:
       discard
+    
+  RedisCursor* = ref RedisCursorObj
+  RedisCursorObj* = object of RootObj
+    redis*: Redis
+    cursor*: int64
+    exhausted*: bool
+    cmd*: string
+    args*: seq[RedisMessage]
+
+proc encodeRedis*[T: SomeSignedInt | SomeUnsignedInt](x: T): RedisMessage
+proc encodeRedis*[T: float | float32 | float64](x: T): RedisMessage
+proc encodeRedis*(x: string): RedisMessage
+proc encodeRedis*(x: bool): RedisMessage
+proc encodeRedis*[T](x: openArray[T]): RedisMessage
+
+proc resetRedisCursor*(cursor: RedisCursor) =
+  cursor.exhausted = false
+  cursor.cursor = 0
+
+proc newRedisCursor*[T: RedisCursor](redis: Redis, cmd: string, args: varargs[RedisMessage, encodeRedis]): T =
+  result.new
+  result.resetRedisCursor()
+  result.redis = redis
+  result.cmd = cmd
+  result.args = @[result.cursor.encodeRedis()] & @args
+
+proc updateRedisCursor*(cursor: RedisCursor, id: int64) =
+  if id == 0:
+    cursor.exhausted = true
+  cursor.cursor = id
+  cursor.args[0] = cursor.cursor.encodeRedis()
 
 proc processLineItem(resTyp: RedisMessageKind, item: string, key: bool): RedisMessage
 proc processBulkItem(redis: Redis, resTyp: RedisMessageKind, item: string, key: bool): Future[RedisMessage] {.async.}
@@ -156,11 +187,6 @@ proc prepareRequest*(request: RedisMessage): seq[string] =
   else:
     raise newException(RedisTypeError, "Unsupported type for outgoing requests")
 
-proc encodeRedis*[T: SomeSignedInt | SomeUnsignedInt](x: T): RedisMessage
-proc encodeRedis*[T: float | float32 | float64](x: T): RedisMessage
-proc encodeRedis*(x: string): RedisMessage
-proc encodeRedis*(x: bool): RedisMessage
-proc encodeRedis*[T](x: openArray[T]): RedisMessage
 proc encodeCommand*(cmd: string, args: varargs[RedisMessage, encodeRedis]): RedisMessage =
   result = RedisMessage(kind: REDIS_MESSAGE_ARRAY)
   for c in cmd.splitWhitespace():
