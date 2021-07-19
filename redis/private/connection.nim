@@ -119,6 +119,7 @@ proc sendLine*(redis: Redis, data: seq[string]) {.async.} =
 
 
 proc needsAuth*(redis: Redis): bool = redis.needsAuth
+
 #------- pvt
 
 proc disconnect[T: Redis | RedisObj](redis: var T) =

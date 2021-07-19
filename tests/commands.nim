@@ -55,7 +55,7 @@ suite "Redis commands":
         assert(deletedKeys == 1)
         # del more keys
         deletedKeys = await connection.del("KEY1", "KEY2", "KEY3")
-        assert(deletedKeys > 0)
+        assert(deletedKeys == 3)
         # exists 1 key
         var existedKeys: int = await connection.exists("KEY1")
         assert(existedKeys == 1)
@@ -74,6 +74,8 @@ suite "Redis commands":
         assert(expireRes == true)
         var expTimeRes = await connection.expireTime("KEY1")
         assert(expTimeRes == expTime.toTime())
+        var ttl = await connection.ttl("KEY1")
+        assert(ttl <= initDuration(seconds = 2))
         await sleepAsync(3000)
         existedKeys = await connection.exists("KEY1")
         assert(existedKeys == 0)
@@ -94,7 +96,7 @@ suite "Redis commands":
         assert(expTimeRes == expTime.toTime())
         expTimeRes = await connection.pexpireTime("KEY2")
         assert(expTimeRes == expTime.toTime())
-        var ttl = await connection.pTTL("KEY1")
+        ttl = await connection.pTTL("KEY1")
         assert(ttl <= initDuration(milliseconds = 500))
         let key = await connection.randomKey()
         assert(key.get("") == "KEY1")
@@ -102,9 +104,20 @@ suite "Redis commands":
         assert(ren == true)
         ren = await connection.renameNX("KEY1", "KEY11")
         assert(ren == true)
-        let keys = connection.scan()
-        asyncFor key in keys:
+        let keysCur = connection.scan()
+        asyncFor key in keysCur:
           echo key
+        let keys = await connection.sort("KEY1")
+        assert(keys.len() == 10)
+        var count = await connection.sortAndStore("KEY1", "KEY2")
+        assert(count == 10)
+        count = await connection.touch("KEY1", "KEY2")
+        assert(count == 2)
+        deletedKeys = await connection.unlink("KEY1")
+        assert(deletedKeys == 1)
+        # del more keys
+        deletedKeys = await connection.unlink("KEY1", "KEY2", "KEY3")
+        assert(deletedKeys == 3)
       except RedisConnectionError:
         echo "Can't connect to Redis instance"
         fail()

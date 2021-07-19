@@ -15,6 +15,8 @@ type
   RedisModuleError* = object of RedisError
   RedisCommandError* = object of RedisError
   RedisCommandNotYetImplementedError* = object of RedisError
+  RedisKeyDoesntExist* = object of RedisError
+  RedisKeyDoesntExpire* = object of RedisError
 
 const MAX_NUMBER_OF_CLIENTS_REACHED = "max number of clients reached"
 const CLIENT_SENT_AUTH_NO_PASSWORD = "Client sent AUTH, but no password is set"

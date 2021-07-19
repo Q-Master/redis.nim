@@ -20,6 +20,10 @@ type
     REDIS_MESSAGE_BIGNUM,
     REDIS_MESSAGE_ATTRS
 
+  RedisSortOrder* = enum
+    REDIS_SORT_NONE,
+    REDIS_SORT_ASC,
+    REDIS_SORT_DESC
 
   RedisMessage* = ref RedisMessageObj
   RedisMessageObj* = object of RootObj

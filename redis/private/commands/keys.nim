@@ -1,6 +1,6 @@
 import std/[asyncdispatch, strutils, tables, times, macros, options]
 import ./cmd
-#import ../exceptions
+import ../exceptions
 
 #[
   Block of keys commands
@@ -25,11 +25,11 @@ import ./cmd
     *RENAMENX
     RESTORE
     *SCAN
-    SORT
-    TOUCH
-    TTL
+    *SORT
+    *TOUCH
+    *TTL
     TYPE
-    UNLINK
+    *UNLINK
     WAIT
 ]#
 
@@ -125,6 +125,10 @@ proc pexpireTime*(redis: Redis, key: string): Future[Time] {.async.} =
 
 proc pTTL*(redis: Redis, key: string): Future[Duration] {.async.} =
   let res = await redis.cmd("PTTL", key)
+  if res.integer == -1:
+    raise newException(RedisKeyDoesntExist, "Key " & key & " doesn't exist")
+  elif res.integer == -2:
+    raise newException(RedisKeyDoesntExpire, "Key " & key & " can't expire")
   result = initDuration(milliseconds = res.integer)
 
 proc randomKey*(redis: Redis): Future[Option[string]] {.async.} =
@@ -162,3 +166,77 @@ proc next*(cursor: RedisScanCursor): Future[tuple[running: bool, result: string]
     result = (false, "")
   else:
     result = (true, cursor.scanReply.pop().str.get())
+
+proc realSort(redis: Redis, key: string, storeKey = string.none, by = string.none, limit = Slice[int].none, sortOrder = REDIS_SORT_ASC, alpha = false, gets: seq[string] = @[]): Future[RedisMessage] {.async.}
+
+proc sort*(redis: Redis, key: string, by = string.none, limit = Slice[int].none, sortOrder = REDIS_SORT_ASC, alpha = false, gets: seq[string] = @[]): Future[seq[string]] {.async.} =
+  result = @[]
+  let res = await redis.realSort(key, by=by, limit=limit, sortOrder=sortOrder, alpha=alpha, gets=gets)
+  for r in res.arr:
+    result.add(r.str.get())
+
+proc sortAndStore*(redis: Redis, key: string, storeKey: string, by = string.none, limit = Slice[int].none, sortOrder = REDIS_SORT_ASC, alpha = false, gets: seq[string] = @[]): Future[int64] {.async.} =
+  let res = await redis.realSort(key, storeKey=storeKey.option, by=by, limit=limit, sortOrder=sortOrder, alpha=alpha, gets=gets)
+  result = res.integer
+
+template touch*(redis: Redis, keys: varargs[string, `$`]): untyped =
+  block:
+    proc realTouch(): Future[int] {.async.} =
+      var res: RedisMessage
+      var args: seq[RedisMessage] = @[]
+      for k in keys:
+        args.add(k.encodeRedis())
+      res = await cmd(redis, "TOUCH", args=args)
+      result = res.integer.int
+    realTouch()
+
+proc ttl*(redis: Redis, key: string): Future[Duration] {.async.} =
+  let res = await redis.cmd("TTL", key)
+  if res.integer == -1:
+    raise newException(RedisKeyDoesntExist, "Key " & key & " doesn't exist")
+  elif res.integer == -2:
+    raise newException(RedisKeyDoesntExpire, "Key " & key & " can't expire")
+  result = initDuration(seconds = res.integer)
+
+template unlink*(redis: Redis, keys: varargs[string, `$`]): untyped =
+  block:
+    proc realUnlink(): Future[int] {.async.} =
+      var res: RedisMessage
+      var args: seq[RedisMessage] = @[]
+      for k in keys:
+        args.add(k.encodeRedis())
+      res = await cmd(redis, "UNLINK", args=args)
+      result = res.integer.int
+    realUnlink()
+
+#------- pvt
+
+proc realSort(redis: Redis, key: string, storeKey = string.none, by = string.none, limit = Slice[int].none, sortOrder = REDIS_SORT_ASC, alpha = false, gets: seq[string] = @[]): Future[RedisMessage] {.async.} =
+  var args: seq[RedisMessage]
+  args.add(key.encodeRedis())
+  if by.isSome:
+    args.add("BY".encodeRedis())
+    args.add(by.get().encodeRedis())
+  if limit.isSome:
+    let lmt = limit.get()
+    args.add("LIMIT".encodeRedis())
+    args.add(lmt.a.encodeRedis())
+    args.add(lmt.b.encodeRedis())
+  for g in gets:
+    args.add("GET".encodeRedis())
+    args.add(g.encodeRedis())
+  case sortOrder
+  of REDIS_SORT_ASC:
+    discard
+  of REDIS_SORT_DESC:
+    args.add("DESC".encodeRedis())
+  of REDIS_SORT_NONE:
+    if by.isNone:
+      args.add("BY".encodeRedis())
+      args.add("nosort".encodeRedis())
+  if alpha:
+    args.add("ALPHA".encodeRedis())
+  if storeKey.isSome:
+    args.add("STORE".encodeRedis())
+    args.add(storeKey.get().encodeRedis())
+  result = await redis.cmd("SORT", args=args)
