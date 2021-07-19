@@ -20,11 +20,11 @@ import ./cmd
     *PEXPIREAT
     *PEXPIRETIME
     *PTTL
-    RANDOMKEY
-    RENAME
-    RENAMENX
+    *RANDOMKEY
+    *RENAME
+    *RENAMENX
     RESTORE
-    SCAN
+    *SCAN
     SORT
     TOUCH
     TTL
@@ -32,6 +32,10 @@ import ./cmd
     UNLINK
     WAIT
 ]#
+
+type
+  RedisScanCursor* = ref object of RedisCursor
+    scanReply: seq[RedisMessage]
 
 proc copy*(redis: Redis, source, destination: string, db: int = -1, replace: bool = false): Future[bool] {.async.} =
   var args: seq[RedisMessage] = @[]
@@ -122,3 +126,39 @@ proc pexpireTime*(redis: Redis, key: string): Future[Time] {.async.} =
 proc pTTL*(redis: Redis, key: string): Future[Duration] {.async.} =
   let res = await redis.cmd("PTTL", key)
   result = initDuration(milliseconds = res.integer)
+
+proc randomKey*(redis: Redis): Future[Option[string]] {.async.} =
+  let res = await redis.cmd("RANDOMKEY")
+  result = res.str
+
+proc rename*(redis: Redis, key: string, newKey: string): Future[bool] {.async.} =
+  let res = await redis.cmd("RENAME", key, newKey)
+  result = res.str.get("") == "OK"
+
+proc renameNX*(redis: Redis, key: string, newKey: string): Future[bool] {.async.} =
+  let res = await redis.cmd("RENAMENX", key, newKey)
+  result = res.integer == 1
+
+proc scan*(redis: Redis, match: Option[string] = string.none, count: int = -1): RedisScanCursor =
+  #  SCAN cursor [MATCH pattern] [COUNT count] [TYPE type]
+  var args: seq[RedisMessage] = @[]
+  if match.isSome:
+    args.add("MATCH".encodeRedis())
+    args.add(match.get().encodeRedis())
+  if count > 0:
+    args.add("COUNT".encodeRedis())
+    args.add(count.encodeRedis())
+  result = newRedisCursor[RedisScanCursor](redis, "SCAN", args=args)
+  result.scanReply = @[]
+
+proc next*(cursor: RedisScanCursor): Future[tuple[running: bool, result: string]] {.async.} =
+  if cursor.scanReply.len == 0 and not cursor.exhausted:
+    let repl = await cast[RedisCursor](cursor).next()
+    if repl.isNil:
+      cursor.scanReply = @[]
+    else:
+      cursor.scanReply = repl.arr
+  if cursor.scanReply.len == 0:
+    result = (false, "")
+  else:
+    result = (true, cursor.scanReply.pop().str.get())

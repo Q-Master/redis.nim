@@ -96,6 +96,15 @@ suite "Redis commands":
         assert(expTimeRes == expTime.toTime())
         var ttl = await connection.pTTL("KEY1")
         assert(ttl <= initDuration(milliseconds = 500))
+        let key = await connection.randomKey()
+        assert(key.get("") == "KEY1")
+        var ren = await connection.rename("KEY1", "KEY11")
+        assert(ren == true)
+        ren = await connection.renameNX("KEY1", "KEY11")
+        assert(ren == true)
+        let keys = connection.scan()
+        asyncFor key in keys:
+          echo key
       except RedisConnectionError:
         echo "Can't connect to Redis instance"
         fail()
