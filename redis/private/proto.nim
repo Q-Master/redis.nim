@@ -64,6 +64,8 @@ proc encodeRedis*[T: float | float32 | float64](x: T): RedisMessage
 proc encodeRedis*(x: string): RedisMessage
 proc encodeRedis*(x: bool): RedisMessage
 proc encodeRedis*[T](x: openArray[T]): RedisMessage
+proc encodeRedis*[T](x: tuple[a: string, b: T]): RedisMessage
+proc encodeRedis*[T](x: array[0..0, (string, T)]): RedisMessage
 
 proc resetRedisCursor*(cursor: RedisCursor) =
   cursor.exhausted = false
@@ -349,6 +351,12 @@ proc encodeRedis*[T](x: openArray[T]): RedisMessage =
   result = RedisMessage(kind: REDIS_MESSAGE_ARRAY, arr: @[])
   for v in x:
     result.arr.add(v.encodeRedis())
+proc encodeRedis*[T](x: tuple[a: string, b: T]): RedisMessage =
+  result = RedisMessage(kind: REDIS_MESSAGE_MAP, map: initTable[string, RedisMessage]())
+  result.map[x.a] = x.b.encodeRedis
+proc encodeRedis*[T](x: array[0..0, (string, T)]): RedisMessage =
+  result = RedisMessage(kind: REDIS_MESSAGE_MAP, map: initTable[string, RedisMessage]())
+  result.map[x[0][0]] = x[0][1].encodeRedis()
 
 const INDENT = 2
 
