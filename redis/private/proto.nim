@@ -193,14 +193,6 @@ proc prepareRequest*(request: RedisMessage): seq[string] =
   else:
     raise newException(RedisTypeError, "Unsupported type for outgoing requests")
 
-proc encodeCommand*(cmd: string, args: varargs[RedisMessage, encodeRedis]): RedisMessage =
-  result = RedisMessage(kind: REDIS_MESSAGE_ARRAY)
-  for c in cmd.splitWhitespace():
-    result.arr.add(c.encodeRedis())
-  if args.len > 0:
-    for arg in args:
-      result.arr.add(arg)
-
 proc toText(result: var string, redisMessage: RedisMessage, nextLine = true, currIndent = 0, isArray = false)
 
 proc `$`*(redisMessage: RedisMessage): string =
