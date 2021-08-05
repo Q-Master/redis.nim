@@ -19,10 +19,10 @@ import ../exceptions
     *MSET
     *MSETNX
     *PSETEX
-    SET
+    *SET
     *SETEX
-    SETNX
-    SETRANGE
+    *SETNX
+    *SETRANGE
     STRALGO
     STRLEN
 ]#
@@ -32,7 +32,7 @@ type
     REDIS_SET_NX
     REDIS_SET_XX
 
-  RedisGetExRequest* = ref object of RedisRequest
+  RedisGetExRequest* = ref object of RedisStrRequest
     ex: bool
     px: bool
     persist: bool
@@ -48,16 +48,14 @@ type
 
 proc newRedisGetExRequest(redis: Redis): RedisGetExRequest =
   result.new
-  result.redis = redis
-  result.req = @[]
+  result.initRedisRequest(redis)
   result.ex = false
   result.px = false
   result.persist = false
 
 proc newRedisSetRequest(redis: Redis): RedisSetRequest =
   result.new
-  result.redis = redis
-  result.req = @[]
+  result.initRedisRequest(redis)
   result.ex = false
   result.px = false
   result.keepttl = false
@@ -146,10 +144,6 @@ proc persist*(req: RedisGetExRequest): RedisGetExRequest =
     raise newException(RedisConnectionError, "Conflicting options for GETEX EX/PX vs PERSIST")
   result.persist = true
   result.add("PERSIST")
-
-proc execute*(req: RedisGetExRequest): Future[Option[string]] {.async.} =
-  let res = await cast[RedisRequest](req).execute()
-  result = res.str
 
 # GETRANGE key start end 
 proc getRange*(redis: Redis, key: string, ranges: Slice[int]): Future[Option[string]] {.async.} =
@@ -297,6 +291,21 @@ proc execute*(req: RedisSetRequest): Future[bool] {.async.} =
 proc execute*(req: RedisSetGetRequest): Future[Option[string]] {.async.} =
   let res = await cast[RedisRequest](req).execute()
   result = res.str
+
+# SETNX key value 
+proc setNx*(redis: Redis, key, value: string): Future[bool] {.async.} =
+  let res = await redis.cmd("SETNX", key, value)
+  result = res.integer == 1
+
+# SETRANGE key offset value 
+proc setRange*(redis: Redis, key, value: string, offset: int64): Future[int64] {.async.} =
+  let res = await redis.cmd("SETRANGE", key, offset, value)
+  result = res.integer
+
+# STRLEN key
+proc strLen*(redis: Redis, key: string): Future[int64] {.async.} =
+  let res = await redis.cmd("STRLEN", key)
+  result = res.integer
 
 #------- pvt
 

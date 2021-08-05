@@ -3,6 +3,7 @@ import private/commands/[cmd]
 import private/commands/connection as conneciton_cmds
 import private/commands/keys as keys_cmds
 import private/commands/strings as strings_cmds
+import private/commands/lists as lists_cmds
 import private/tools/asyncfor
 
 export proto

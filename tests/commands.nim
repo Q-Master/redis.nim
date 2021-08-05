@@ -101,6 +101,12 @@ suite "Redis commands":
         assert(msetRepl == true)
         replGet = await connection.setVal("KEY1", "Test1").get().execute()
         assert(replGet.get() == "Test")
+        msetRepl = await connection.setNx("KEY1", "TEST")
+        assert(msetRepl == false)
+        replSize = await connection.setRange("KEY1", "2", 4)
+        assert(replSize == 5)
+        replSize = await connection.strLen("KEY1")
+        assert(replSize == 5)
       except RedisConnectionError:
         echo "Can't connect to Redis instance"
         fail()
