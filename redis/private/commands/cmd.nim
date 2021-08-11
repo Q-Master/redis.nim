@@ -126,6 +126,18 @@ proc execute*(req: RedisArrayRequest[bool]): Future[seq[bool]] {.async.} =
   for x in res.arr:
     result.add(x.boolean)
 
+proc execute*(req: RedisArrayRequest[Option[string]]): Future[seq[Option[string]]] {.async.} =
+  result = @[]
+  let res = await cast[RedisRequest](req).execute()
+  for x in res.arr:
+    case x.kind
+    of REDIS_MESSAGE_NIL:
+      result.add(string.none)
+    of REDIS_MESSAGE_STRING, REDIS_MESSAGE_SIMPLESTRING:
+      result.add(x.str)
+    else:
+      raise newException(RedisCommandError, "Wrong type of reply for string array")
+
 proc execute*(req: RedisArrayRequest[string]): Future[seq[string]] {.async.} =
   result = @[]
   let res = await cast[RedisRequest](req).execute()

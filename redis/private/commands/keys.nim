@@ -152,6 +152,14 @@ proc scan*(redis: Redis, match: Option[string] = string.none, count: int = -1): 
   if count > 0:
     result.add("COUNT", count)
 
+const
+  # SSCAN key cursor [MATCH pattern] [COUNT count] 
+  sscan* = scan
+  # HSCAN key cursor [MATCH pattern] [COUNT count] 
+  hscan* = scan
+  # ZSCAN key cursor [MATCH pattern] [COUNT count] 
+  zscan* = scan
+
 # SORT key [BY pattern] [LIMIT offset count] [GET pattern [GET pattern ...]] [ASC|DESC] [ALPHA] [STORE destination]
 proc realSort(
   req: RedisRequest, key: string, 

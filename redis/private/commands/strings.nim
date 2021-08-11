@@ -37,7 +37,7 @@ type
     px: bool
     persist: bool
 
-  RedisSetRequest* = ref object of RedisRequest
+  RedisSetRequest* = ref object of RedisRequestT[RedisStrBool]
     ex: bool
     px: bool
     keepttl: bool
@@ -47,15 +47,13 @@ type
   RedisSetGetRequest* = ref object of RedisSetRequest
 
 proc newRedisGetExRequest(redis: Redis): RedisGetExRequest =
-  result.new
-  result.initRedisRequest(redis)
+  result = newRedisRequest[RedisGetExRequest](redis)
   result.ex = false
   result.px = false
   result.persist = false
 
 proc newRedisSetRequest(redis: Redis): RedisSetRequest =
-  result.new
-  result.initRedisRequest(redis)
+  result = newRedisRequest[RedisSetRequest](redis)
   result.ex = false
   result.px = false
   result.keepttl = false
@@ -63,29 +61,29 @@ proc newRedisSetRequest(redis: Redis): RedisSetRequest =
   result.xx = false
 
 # APPEND key value 
-proc append*(redis: Redis, key, data: string): Future[int64] {.async.} =
-  let res = await redis.cmd("APPEND", key, data)
-  result = res.integer
+proc append*(redis: Redis, key, data: string): RedisRequestT[int64] =
+  result = newRedisRequest[RedisRequestT[int64]](redis)
+  result.addCmd("APPEND", key, data)
 
 # DECR key  
-proc decr*(redis: Redis, key: string): Future[int64] {.async.} =
-  let res = await redis.cmd("DECR", key)
-  result = res.integer
+proc decr*(redis: Redis, key: string): RedisRequestT[int64] =
+  result = newRedisRequest[RedisRequestT[int64]](redis)
+  result.addCmd("DECR", key)
 
 # DECRBY key decrement 
-proc decrBy*(redis: Redis, key: string, num: int64): Future[int64] {.async.} =
-  let res = await redis.cmd("DECRBY", key, num)
-  result = res.integer
+proc decrBy*(redis: Redis, key: string, num: int64): RedisRequestT[int64] =
+  result = newRedisRequest[RedisRequestT[int64]](redis)
+  result.addCmd("DECRBY", key, num)
 
 # GET key
-proc get*(redis: Redis, key: string): Future[Option[string]] {.async.} =
-  let res = await redis.cmd("GET", key)
-  result = res.str
+proc get*(redis: Redis, key: string): RedisRequestT[Option[string]] =
+  result = newRedisRequest[RedisRequestT[Option[string]]](redis)
+  result.addCmd("GET", key)
 
 # GETDEL key
-proc getDel*(redis: Redis, key: string): Future[Option[string]] {.async.} =
-  let res = await redis.cmd("GETDEL", key)
-  result = res.str
+proc getDel*(redis: Redis, key: string): RedisRequestT[Option[string]] =
+  result = newRedisRequest[RedisRequestT[Option[string]]](redis)
+  result.addCmd("GETDEL", key)
 
 # GETEX key [EX seconds|PX milliseconds|EXAT timestamp|PXAT milliseconds-timestamp|PERSIST]
 proc getEx*(redis: Redis, key: string): RedisGetExRequest =
@@ -146,67 +144,78 @@ proc persist*(req: RedisGetExRequest): RedisGetExRequest =
   result.add("PERSIST")
 
 # GETRANGE key start end 
-proc getRange*(redis: Redis, key: string, ranges: Slice[int]): Future[Option[string]] {.async.} =
-  let res = await redis.cmd("GETRANGE", key, ranges.a, ranges.b)
-  result = res.str
+proc getRange*(redis: Redis, key: string, ranges: Slice[int]): RedisRequestT[Option[string]] =
+  result = newRedisRequest[RedisRequestT[Option[string]]](redis)
+  result.addCmd("GETRANGE", key, ranges.a, ranges.b)
 
 # GETSET key value
-proc getSet*(redis: Redis, key, value: string): Future[Option[string]] {.async.} =
-  let res = await redis.cmd("GETSET", key, value)
-  result = res.str
+proc getSet*(redis: Redis, key, value: string): RedisRequestT[Option[string]] =
+  result = newRedisRequest[RedisRequestT[Option[string]]](redis)
+  result.addCmd("GETSET", key, value)
 
 # INCR key
-proc incr*(redis: Redis, key: string): Future[int64] {.async.} =
-  let res = await redis.cmd("INCR", key)
-  result = res.integer
+proc incr*(redis: Redis, key: string): RedisRequestT[int64] =
+  result = newRedisRequest[RedisRequestT[int64]](redis)
+  result.addCmd("INCR", key)
 
 # INCRBY key increment
-proc incrBy*(redis: Redis, key: string, num: int64): Future[int64] {.async.} =
-  let res = await redis.cmd("INCRBY", key, num)
-  result = res.integer
+proc incrBy*(redis: Redis, key: string, num: int64): RedisRequestT[int64] =
+  result = newRedisRequest[RedisRequestT[int64]](redis)
+  result.addCmd("INCRBY", key, num)
 
 # INCRBYFLOAT key increment
-proc incrBy*(redis: Redis, key: string, num: float): Future[float] {.async.} =
-  let res = await redis.cmd("INCRBYFLOAT", key, num)
-  result = res.double
+proc incrBy*(redis: Redis, key: string, num: float): RedisRequestT[float] =
+  result = newRedisRequest[RedisRequestT[float]](redis)
+  result.addCmd("INCRBYFLOAT", key, num)
 
 # MGET key [key ...] 
-proc mget*(redis: Redis, keys: varargs[string, `$`]): Future[seq[Option[string]]] =
-  var args: seq[RedisMessage] = @[]
-  for k in keys:
-    args.add(k.encodeRedis())
-  var resFuture = newFuture[seq[Option[string]]]("strings.mget")
-  var fut = redis.cmd("MGET", args=args)
-  fut.callback =
-    proc(future: Future[RedisMessage]) =
-      if future.failed:
-        resFuture.fail(future.readError())
-      else:
-        var res: seq[Option[string]] = @[]
-        for str in future.read.arr:
-          res.add(str.str)
-        resFuture.complete(res)
-  result = resFuture
-
-proc realMset(redis: Redis, nx: bool, keyvalues: varargs[RedisMessage]): Future[bool]
+proc mGet*(redis: Redis, key: string, keys: varargs[RedisMessage, encodeRedis]): RedisArrayRequest[Option[string]] =
+  result = newRedisRequest[RedisArrayRequest[Option[string]]](redis)
+  result.addCmd("MGET", key)
+  if keys.len > 0:
+    result.add(data = keys)
 
 # MSET key value [key value ...] 
-proc mset*(redis: Redis, keyvalues: varargs[RedisMessage, encodeRedis]): Future[bool] =
-  result = redis.realMset(false, keyvalues=keyvalues)
+proc mSet*[T](redis: Redis, keyValue: tuple[a: string, b: T], keyValues: varargs[tuple[a: string, b: T]]): RedisRequestT[RedisStrBool] =
+  result = newRedisRequest[RedisRequestT[RedisStrBool]](redis)
+  result.addCmd("MSET", keyValue)
+  for kv in keyValues:
+    result.add(kv.a, kv.b)
 
 # MSETNX key value [key value ...] 
-proc msetNx*(redis: Redis, keyvalues: varargs[RedisMessage, encodeRedis]): Future[bool] =
-  result = redis.realMset(true, keyvalues=keyvalues)
-
-proc realSetEx[T: Time | DateTime | Duration](redis: Redis, key: string, millis: bool, timeout: T, value: string): Future[bool] {.async.}
+proc mSetNX*[T](redis: Redis, keyValue: tuple[a: string, b: T], keyValues: varargs[tuple[a: string, b: T]]): RedisRequestT[RedisIntBool] =
+  result = newRedisRequest[RedisRequestT[RedisIntBool]](redis)
+  result.addCmd("MSETNX", keyValue.a, keyValue.b)
+  for kv in keyValues:
+    result.add(kv.a, kv.b)
 
 # SETEX key seconds value
-proc setEx*[T: Time | DateTime | Duration](redis: Redis, key: string, timeout: T, value: string): Future[bool] {.async.} =
-  result = await realSetEx[T](redis, key, false, timeout, value)
+proc setEx*[T: Time | DateTime | Duration](redis: Redis, key: string, value: string, timeout: T): RedisRequestT[RedisStrBool] =
+  result = newRedisRequest[RedisRequestT[RedisStrBool]](redis)
+  result.addCmd("SETEX", key)
+  when T is Time or T is DateTime:
+    var t: Time
+    when T is DateTime:
+      t = timeout.toTime()
+    else:
+      t = timeout
+    result.add(t.toUnix(), value)
+  else:
+    result.add(timeout.inSeconds, value)
 
 # PSETEX key milliseconds value
-proc psetEx*[T: Time | DateTime | Duration](redis: Redis, key: string, timeout: T, value: string): Future[bool] {.async.} =
-  result = await realSetEx[T](redis, key, true, timeout, value)
+proc pSetEx*[T: Time | DateTime | Duration](redis: Redis, key: string, value: string, timeout: T): RedisRequestT[RedisStrBool] =
+  result = newRedisRequest[RedisRequestT[RedisStrBool]](redis)
+  result.addCmd("PSETEX", key)
+  when T is Time or T is DateTime:
+    var t: Time
+    when T is DateTime:
+      t = timeout.toTime()
+    else:
+      t = timeout
+    result.add(int64(t.toUnixFloat()*1000), value)
+  else:
+    result.add(timeout.inMilliseconds, value)
 
 # SET key value [EX seconds|PX milliseconds|EXAT timestamp|PXAT milliseconds-timestamp|KEEPTTL] [NX|XX] [GET]
 proc setVal*(redis: Redis, key, value: string): RedisSetRequest =
@@ -284,73 +293,21 @@ proc get*(req: RedisSetRequest): RedisSetGetRequest =
   result = cast[RedisSetGetRequest](req)
   result.add("GET")
 
-proc execute*(req: RedisSetRequest): Future[bool] {.async.} =
-  let res = await cast[RedisRequest](req).execute()
-  result = (res.str.get("") == "OK")
-
 proc execute*(req: RedisSetGetRequest): Future[Option[string]] {.async.} =
   let res = await cast[RedisRequest](req).execute()
   result = res.str
 
 # SETNX key value 
-proc setNx*(redis: Redis, key, value: string): Future[bool] {.async.} =
-  let res = await redis.cmd("SETNX", key, value)
-  result = res.integer == 1
+proc setNx*(redis: Redis, key, value: string): RedisRequestT[RedisIntBool] =
+  result = newRedisRequest[RedisRequestT[RedisIntBool]](redis)
+  result.addCmd("SETNX", key, value)
 
 # SETRANGE key offset value 
-proc setRange*(redis: Redis, key, value: string, offset: int64): Future[int64] {.async.} =
-  let res = await redis.cmd("SETRANGE", key, offset, value)
-  result = res.integer
+proc setRange*(redis: Redis, key, value: string, offset: int64): RedisRequestT[int64] =
+  result = newRedisRequest[RedisRequestT[int64]](redis)
+  result.addCmd("SETRANGE", key, offset, value)
 
 # STRLEN key
-proc strLen*(redis: Redis, key: string): Future[int64] {.async.} =
-  let res = await redis.cmd("STRLEN", key)
-  result = res.integer
-
-#------- pvt
-
-proc realMset(redis: Redis, nx: bool, keyvalues: varargs[RedisMessage]): Future[bool] =
-  var args: seq[RedisMessage] = @[]
-  for kv in keyvalues:
-    if kv.kind != REDIS_MESSAGE_MAP:
-      raise newException(RedisCommandError, "MSET(NX) accepts only {\"a\": b} arguments")
-    for k,v in kv.map.pairs:
-      args.add(k.encodeRedis())
-      args.add(v)
-  var resFuture = newFuture[bool]((if nx: "strings.msetNx" else: "strings.mset"))
-  var fut: Future[RedisMessage] 
-  if nx:
-    fut = redis.cmd("MSETNX", args=args)
-  else:
-    fut = redis.cmd("MSET", args=args)
-  fut.callback =
-    proc(future: Future[RedisMessage]) =
-      if future.failed:
-        resFuture.fail(future.readError())
-      else:
-        if nx:
-          resFuture.complete(future.read.integer == 1)
-        else:
-          resFuture.complete(true)
-  result = resFuture
-
-proc realSetEx[T: Time | DateTime | Duration](redis: Redis, key: string, millis: bool, timeout: T, value: string): Future[bool] {.async.} =
-  var command = newRedisRequest(redis)
-  command.addCmd("PSETEX", key)
-  when T is Time or T is DateTime:
-    var t: Time
-    when T is DateTime:
-      t = timeout.toTime()
-    else:
-      t = timeout
-    if millis:
-      command.add(int64(t.toUnixFloat()*1000), value)
-    else:
-      command.add(t.toUnix(), value)
-  else:
-    if millis:
-      command.add(timeout.inMilliseconds, value)
-    else:
-      command.add(timeout.inSeconds, value)
-  let res = await command.execute()
-  result = (res.str.get("") == "OK")
+proc strLen*(redis: Redis, key: string): RedisRequestT[int64] =
+  result = newRedisRequest[RedisRequestT[int64]](redis)
+  result.addCmd("STRLEN", key)

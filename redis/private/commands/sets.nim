@@ -84,7 +84,7 @@ proc sMembers*(redis: Redis, key: string): RedisArrayRequest[string] =
   result.addCmd("SMEMBERS", key)
 
 # SMISMEMBER key member [member ...] 
-proc smIsMember*(redis: Redis, key, member: string, members: varargs[RedisMessage, encodeRedis]): RedisArrayRequest[RedisRequestT[RedisIntBool]] =
+proc smIsMember*(redis: Redis, key, member: string, members: varargs[RedisMessage, encodeRedis]): RedisArrayRequest[RedisIntBool] =
   result.new
   result.initRedisRequest(redis)
   result.addCmd("SMISMEMBER", key, member)
@@ -124,15 +124,6 @@ proc sRem*(redis: Redis, key, member: string, members: varargs[RedisMessage, enc
   result.initRedisRequest(redis)
   result.addCmd("SREM", key, member)
   result.add(data = members)
-
-# SSCAN key cursor [MATCH pattern] [COUNT count] 
-proc sscan*(redis: Redis, match: Option[string] = string.none, count: int = -1): RedisCursorRequest =
-  result = newRedisCursor(redis)
-  result.addCmd("SCAN", 0)
-  if match.isSome:
-    result.add("MATCH", match.get())
-  if count > 0:
-    result.add("COUNT", count)
 
 # SUNION key [key ...] 
 proc sUnion*(redis: Redis, key: string, keys: varargs[RedisMessage, encodeRedis]): RedisArrayRequest[string] =
