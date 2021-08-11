@@ -41,15 +41,15 @@ type
     modules*: seq[string]
   
   ClientType* = enum
-    CLIENT_TYPE_ALL = -1
-    CLIENT_TYPE_NORMAL = 0
-    CLIENT_TYPE_MASTER = 1
-    CLIENT_TYPE_REPLICA = 2
-    CLIENT_TYPE_PUBSUB = 3
+    CLIENT_TYPE_ALL = ""
+    CLIENT_TYPE_NORMAL = "normal"
+    CLIENT_TYPE_MASTER = "master"
+    CLIENT_TYPE_REPLICA = "replica"
+    CLIENT_TYPE_PUBSUB = "pubsub"
   
   HostPort = object
-    host: string
-    port: Port
+    host*: string
+    port*: Port
 
   ClientInfo* = ref ClientInfoObj
   ClientInfoObj* = object of RootObj
@@ -76,118 +76,128 @@ type
     totMem*: uint64
     redir*: int64
     user*: string
-    
-proc auth*(redis: Redis, password: string, login: string = "") {.async.} =
-  let res = (if login.len == 0: await redis.cmd("AUTH", password) else: await redis.cmd("AUTH", login, password))
-  if res.kind == REDIS_MESSAGE_ERROR:
-    raise newException(RedisAuthError, res.error)
+  
+  RedisClientInfoRequest* = ref object of RedisRequest
 
-proc clientCaching*(redis: Redis, enabled: bool) {.async.} =
-  let res = await redis.cmd("CLIENT CACHING", (if enabled: "YES" else: "NO"))
-  if res.str.get("") != "OK":
-    raise newException(RedisCommandError, "Wrong answer to CLIENT CACHING")
+# AUTH [username] password 
+proc auth*(redis: Redis, password: string, login: Option[string] = string.none): RedisRequestT[RedisStrBool] =
+  result = newRedisRequest[RedisRequestT[RedisStrBool]](redis)
+  if login.isSome:
+    result.addCmd("AUTH", login.get(), password)
+  else:
+    result.addCmd("AUTH", password)
 
-proc clientGetRedir*(redis: Redis): Future[int64] {.async.} =
-  let res = await redis.cmd("CLIENT GETREDIR")
-  result = res.integer
+# CLIENT CACHING YES|NO 
+proc clientCaching*(redis: Redis, enabled: bool): RedisRequestT[RedisStrBool] =
+  result = newRedisRequest[RedisRequestT[RedisStrBool]](redis)
+  result.addCmd("CLIENT CACHING", (if enabled: "YES" else: "NO"))
 
-const typeToStringType = {
-  CLIENT_TYPE_MASTER: "master",
-  CLIENT_TYPE_NORMAL: "normal",
-  CLIENT_TYPE_PUBSUB: "pubsub",
-  CLIENT_TYPE_REPLICA: "replica"}.toTable()
+# CLIENT GETNAME 
+proc clientGetName*(redis: Redis): RedisRequestT[Option[string]] =
+  result = newRedisRequest[RedisRequestT[Option[string]]](redis)
+  result.addCmd("CLIENT GETNAME")
+
+# CLIENT GETREDIR 
+proc clientGetRedir*(redis: Redis): RedisRequestT[int64] =
+  result = newRedisRequest[RedisRequestT[int64]](redis)
+  result.addCmd("CLIENT GETREDIR")
+
+# CLIENT ID 
+proc clientID*(redis: Redis): RedisRequestT[int64] =
+  result = newRedisRequest[RedisRequestT[int64]](redis)
+  result.addCmd("CLIENT ID")
+
+# CLIENT INFO 
 proc parseClientInfo(line: string): ClientInfo
-proc clientInfo*(redis: Redis): Future[ClientInfo] {.async.} =
-  let res = await redis.cmd("CLIENT INFO")
-  var str = res.str.get("")
+
+proc fromRedisReq*(req: RedisRequestT[ClientInfo]): ClientInfo =
+  var str = req.req.str.get("")
   str.stripLineEnd()
   result = str.parseClientInfo()
 
-proc clientList*(redis: Redis, clientType: ClientType = CLIENT_TYPE_ALL, clientIDs: seq[int64] = @[]): Future[seq[ClientInfo]] {.async.} =
+proc clientInfo*(redis: Redis): RedisRequestT[ClientInfo] =
+  result = newRedisRequest[RedisRequestT[ClientInfo]](redis)
+  result.addCmd("CLIENT INFO")
+
+# CLIENT LIST [TYPE normal|master|replica|pubsub] [ID client-id [client-id ...]] 
+proc fromRedisReq*(req: RedisArrayRequest[ClientInfo]): seq[ClientInfo] =
   result = @[]
-  var args: seq[RedisMessage] = @[]
-  if clientType != CLIENT_TYPE_ALL:
-    args.add("TYPE".encodeRedis())
-    args.add(typeToStringType[clientType].encodeRedis())
-  if clientIDs.len > 0:
-    args.add("ID".encodeRedis())
-    for id in clientIDs:
-      args.add(id.encodeRedis())
-  let res = await redis.cmd("CLIENT LIST", args = args)
-  var str = res.str.get("")
+  var str = req.req.str.get("")
   str.stripLineEnd()
   for s in str.split('\n'):
     result.add(s.parseClientInfo())
 
-proc clientID*(redis: Redis): Future[uint64] {.async.} =
-  let res = await redis.cmd("CLIENT ID")
-  result = res.integer.uint64
+proc clientList*(redis: Redis, clientType: ClientType = CLIENT_TYPE_ALL, clientIDs: seq[int64] = @[]): RedisArrayRequest[ClientInfo] =
+  result = newRedisRequest[RedisArrayRequest[ClientInfo]](redis)
+  result.addCmd("CLIENT LIST")
+  if clientType != CLIENT_TYPE_ALL:
+    result.add("TYPE", $clientType)
+  if clientIDs.len > 0:
+    result.add("ID")
+    for id in clientIDs:
+      result.add(id)
 
-proc clientKill*(redis: Redis, args: varargs[RedisMessage, encodeRedis]): Future[RedisMessage] {.async.} =
-  raise newException(RedisCommandNotYetImplementedError, "CLIENT KILL is not implemented yet")
+# CLIENT SETNAME connection-name 
+proc clientSetName*(redis: Redis, name: string): RedisRequestT[RedisStrBool] =
+  result = newRedisRequest[RedisRequestT[RedisStrBool]](redis)
+  result.addCmd("CLIENT SETNAME", name)
 
-proc clientReply*(redis: Redis, args: varargs[RedisMessage, encodeRedis]): Future[RedisMessage] {.async.} =
-  raise newException(RedisCommandNotYetImplementedError, "CLIENT REPLY is not implemented yet")
+# ECHO message 
+proc echo*(redis: Redis, msg: string): RedisRequestT[string] =
+  result = newRedisRequest[RedisRequestT[string]](redis)
+  result.addCmd("ECHO", msg)
 
-proc clientSetName*(redis: Redis, name: string) {.async.} =
-  let res = await redis.cmd("CLIENT SETNAME", name)
-  if res.str.get("") != "OK":
-    raise newException(RedisCommandError, "Wrong answer to CLIENT SETNAME")
-
-proc clientGetName*(redis: Redis): Future[Option[string]] {.async.} =
-  let res = await redis.cmd("CLIENT GETNAME")
-  if res.kind == REDIS_MESSAGE_NIL:
-    result = string.none
-  else:
-    result = res.str
-
-proc clientTracking*(redis: Redis, args: varargs[RedisMessage, encodeRedis]): Future[RedisMessage] {.async.} =
-  raise newException(RedisCommandNotYetImplementedError, "CLIENT TRACKING is not implemented yet")
-
-proc clientTrackingInfo*(redis: Redis, args: varargs[RedisMessage, encodeRedis]): Future[RedisMessage] {.async.} =
-  raise newException(RedisCommandNotYetImplementedError, "CLIENT TRACKING INFO is not implemented yet")
-
-proc clientUnblock*(redis: Redis, args: varargs[RedisMessage, encodeRedis]): Future[RedisMessage] {.async.} =
-  raise newException(RedisCommandNotYetImplementedError, "CLIENT UNBLOCK is not implemented yet")
-
-proc clientPause*(redis: Redis, args: varargs[RedisMessage, encodeRedis]): Future[RedisMessage] {.async.} =
-  raise newException(RedisCommandNotYetImplementedError, "CLIENT PAUSE is not implemented yet")
-
-proc clientUnpause*(redis: Redis, args: varargs[RedisMessage, encodeRedis]): Future[RedisMessage] {.async.} =
-  raise newException(RedisCommandNotYetImplementedError, "CLIENT UNPAUSE is not implemented yet")
-
-proc echo*(redis: Redis, msg: string): Future[string] {.async.} =
-  let res = await redis.cmd("ECHO", msg)
-  result = res.str.get("")
-
-proc hello*(redis: Redis, args: varargs[RedisMessage, encodeRedis]): Future[RedisHello] {.async.} =
-  let res = await redis.cmd("HELLO", args)
-  result.new()
-  case res.kind
+# HELLO [protover [AUTH username password] [SETNAME clientname]]
+proc fromRedisReq*(req:RedisRequestT[RedisHello]): RedisHello =
+  result.new
+  case req.req.kind
   of REDIS_MESSAGE_ARRAY:
     # RESP2 reply
-    result.server = res.arr[1].str.get()
-    result.version = res.arr[3].str.get()
-    result.proto = res.arr[5].integer.int
-    result.id = res.arr[7].integer.int
-    result.mode =  res.arr[9].str.get()
-    result.role =  res.arr[11].str.get()
-    for m in res.arr[13].arr:
+    result.server = req.req.arr[1].str.get()
+    result.version = req.req.arr[3].str.get()
+    result.proto = req.req.arr[5].integer.int
+    result.id = req.req.arr[7].integer.int
+    result.mode =  req.req.arr[9].str.get()
+    result.role =  req.req.arr[11].str.get()
+    for m in req.req.arr[13].arr:
       result.modules.add(m.str.get())
   of REDIS_MESSAGE_MAP:
     # RESP3 reply
-    result.server = res.map["server"].str.get()
-    result.version = res.map["version"].str.get()
-    result.proto = res.map["proto"].integer.int
-    result.id = res.map["id"].integer.int
-    result.mode =  res.map["mode"].str.get()
-    result.role =  res.map["role"].str.get()
-    for m in res.map["modules"].arr:
+    result.server = req.req.map["server"].str.get()
+    result.version = req.req.map["version"].str.get()
+    result.proto = req.req.map["proto"].integer.int
+    result.id = req.req.map["id"].integer.int
+    result.mode =  req.req.map["mode"].str.get()
+    result.role =  req.req.map["role"].str.get()
+    for m in req.req.map["modules"].arr:
       result.modules.add(m.str.get())
   else:
     raise newException(RedisCommandError, "Unexpected reply for HELLO")
 
-proc ping*(redis: Redis, msg: string = ""): Future[string] {.async.} =
+proc hello*(redis: Redis, 
+  protoVer: Option[int] = int.none, 
+  login: Option[string] = string.none, 
+  password: Option[string] = string.none, 
+  clientName: Option[string] = string.none): RedisRequestT[RedisHello] =
+  result = newRedisRequest[RedisRequestT[RedisHello]](redis)
+  result.addCmd("HELLO")
+  if protoVer.isSome:
+    result.add(protoVer.get())
+  if password.isSome:
+    result.add("AUTH")
+    if login.isSome:
+      result.add(login.get())
+    result.add(password.get())
+  if clientName.isSome:
+    result.add("SETNAME", clientName.get())
+
+# PING [message] 
+proc ping*(redis: Redis, msg: Option[string] = string.none): RedisRequestT[string] =
+  result = newRedisRequest[RedisRequestT[string]](redis)
+  result.addCmd("PING")
+  if msg.isSome:
+    result.add(msg.get())
+#[ 
   var res: RedisMessage
   if msg.len > 0:
     res = await redis.cmd("PING", msg) 
@@ -212,23 +222,22 @@ proc ping*(redis: Redis, msg: string = ""): Future[string] {.async.} =
       raise newException(RedisCommandError, "Wrong answer to PING: " & res.arr[0].str.get())
   else:
     raise newException(RedisCommandError, "Wrong answer to PING: " & (if res.kind == REDIS_MESSAGE_STRING: res.str.get() else: "Unknown (type: " & $res.kind & ")"))
+]#
 
-proc quit*(redis: Redis) {.async.} =
-  let res = await redis.cmd("QUIT")
-  if res.str.get("") != "OK":
-    raise newException(RedisCommandError, "Unexpected reply for QUIT")
+# QUIT
+proc quit*(redis: Redis): RedisRequestT[RedisStrBool] =
+  result = newRedisRequest[RedisRequestT[RedisStrBool]](redis)
+  result.addCmd("QUIT")
 
-proc reset*(redis: Redis): Future[RedisMessage] {.async.} =
-  let res = await redis.cmd("RESET")
-  if res.str.get("") != "RESET":
-    raise newException(RedisCommandError, "Unexpected reply for RESET")
-  if redis.needsAuth:
-    raise newException(RedisAuthError, "Connection must be reauthenticated")
+# RESET
+proc reset*(redis: Redis): RedisRequestT[string] =
+  result = newRedisRequest[RedisRequestT[string]](redis)
+  result.addCmd("RESET")
 
-proc select*(redis: Redis, db: int = 0): Future[RedisMessage] {.async.} =
-  let res = await redis.cmd("SELECT", db)
-  if res.str.get("") != "OK":
-    raise newException(RedisCommandError, "Unexpected reply for SELECT")
+# SELECT index 
+proc select*(redis: Redis, db: int = 0): RedisRequestT[RedisStrBool] =
+  result = newRedisRequest[RedisRequestT[RedisStrBool]](redis)
+  result.addCmd("SELECT", db)
 
 #------- pvt
 template tohp(hp: string): HostPort =

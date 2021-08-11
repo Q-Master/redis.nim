@@ -32,7 +32,7 @@ type
     REDIS_SET_NX
     REDIS_SET_XX
 
-  RedisGetExRequest* = ref object of RedisStrRequest
+  RedisGetExRequest* = ref object of RedisRequestT[Option[string]]
     ex: bool
     px: bool
     persist: bool

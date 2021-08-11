@@ -24,6 +24,13 @@ type
     REDIS_SORT_NONE,
     REDIS_SORT_ASC,
     REDIS_SORT_DESC
+  
+  RedisExpireType* = enum
+    REDIS_EXPIRE_NOT_SET
+    REDIS_EXPIRE_NX = "NX"
+    REDIS_EXPIRE_XX = "XX"
+    REDIS_EXPIRE_GT = "GT"
+    REDIS_EXPIRE_LT = "LT"
 
   RedisMessage* = ref RedisMessageObj
   RedisMessageObj* = object of RootObj
@@ -51,14 +58,6 @@ type
     of REDIS_MESSAGE_ATTRS:
       discard
     
-  RedisCursor* = ref RedisCursorObj
-  RedisCursorObj* = object of RootObj
-    redis*: Redis
-    cursor*: int64
-    exhausted*: bool
-    cmd*: string
-    args*: seq[RedisMessage]
-
 proc encodeRedis*[T: SomeSignedInt | SomeUnsignedInt](x: T): RedisMessage
 proc encodeRedis*[T: float | float32 | float64](x: T): RedisMessage
 proc encodeRedis*(x: string): RedisMessage
@@ -66,23 +65,6 @@ proc encodeRedis*(x: bool): RedisMessage
 proc encodeRedis*[T](x: openArray[T]): RedisMessage
 proc encodeRedis*[T](x: tuple[a: string, b: T]): RedisMessage
 proc encodeRedis*[T](x: array[0..0, (string, T)]): RedisMessage
-
-proc resetRedisCursor*(cursor: RedisCursor) =
-  cursor.exhausted = false
-  cursor.cursor = 0
-
-proc newRedisCursor*[T: RedisCursor](redis: Redis, cmd: string, args: varargs[RedisMessage, encodeRedis]): T =
-  result.new
-  result.resetRedisCursor()
-  result.redis = redis
-  result.cmd = cmd
-  result.args = @[result.cursor.encodeRedis()] & @args
-
-proc updateRedisCursor*(cursor: RedisCursor, id: int64) =
-  if id == 0:
-    cursor.exhausted = true
-  cursor.cursor = id
-  cursor.args[0] = cursor.cursor.encodeRedis()
 
 proc processLineItem(resTyp: RedisMessageKind, item: string, key: bool): RedisMessage
 proc processBulkItem(redis: Redis, resTyp: RedisMessageKind, item: string, key: bool): Future[RedisMessage] {.async.}

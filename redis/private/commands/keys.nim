@@ -1,6 +1,5 @@
-import std/[asyncdispatch, strutils, tables, times, macros, options]
+import std/[asyncdispatch, tables, times, macros, options]
 import ./cmd
-import ../exceptions
 
 #[
   Block of keys commands
@@ -33,210 +32,203 @@ import ../exceptions
     WAIT
 ]#
 
-type
-  RedisScanCursor* = ref object of RedisCursor
-    scanReply: seq[RedisMessage]
-
-proc copy*(redis: Redis, source, destination: string, db: int = -1, replace: bool = false): Future[bool] {.async.} =
-  var args: seq[RedisMessage] = @[]
-  args.add(source.encodeRedis())
-  args.add(destination.encodeRedis())
+# COPY source destination [DB destination-db] [REPLACE] 
+proc copy*(redis: Redis, source, destination: string, db: int = -1, replace: bool = false): RedisRequestT[RedisIntBool] =
+  result = newRedisRequest[RedisRequestT[RedisIntBool]](redis)
+  result.addCmd("COPY", source, destination)
   if db >= 0:
-    args.add(db.encodeRedis())
+    result.add(db)
   if replace:
-    args.add("REPLACE".encodeRedis())
-  let res = await redis.cmd("COPY", args = args)
-  result = (if res.integer > 0: true else: false)
+    result.add("REPLACE")
 
-template del*(redis: Redis, keys: varargs[string, `$`]): untyped =
-  block:
-    proc realDel(): Future[int] {.async.} =
-      var res: RedisMessage
-      var args: seq[RedisMessage] = @[]
-      for k in keys:
-        args.add(k.encodeRedis())
-      res = await cmd(redis, "DEL", args=args)
-      result = res.integer.int
-    realDel()
+# DEL key [key ...] 
+proc del*(redis: Redis, key: string, keys: varargs[RedisMessage, encodeRedis]): RedisRequestT[int64] =
+  result = newRedisRequest[RedisRequestT[int64]](redis)
+  result.addCmd("DEL", key)
+  if keys.len() > 0:
+    result.add(data = keys)
 
-proc dump*(redis: Redis, key: string): Future[string] {.async.} =
-  let res = await redis.cmd("DUMP", key)
-  result = res.str.get("")
+# DUMP key 
+proc dump*(redis: Redis, key: string): RedisRequestT[Option[string]] =
+  result = newRedisRequest[RedisRequestT[Option[string]]](redis)
+  result.addCmd("DUMP", key)
 
-template exists*(redis: Redis, keys: varargs[string, `$`]): untyped =
-  block:
-    proc realExists(): Future[int] {.async.} =
-      var res: RedisMessage
-      var args: seq[RedisMessage] = @[]
-      for k in keys:
-        args.add(k.encodeRedis())
-      res = await cmd(redis, "EXISTS", args=args)
-      result = res.integer.int
-    realExists()
+# EXISTS key [key ...] 
+proc exists*(redis: Redis, key: string, keys: varargs[RedisMessage, encodeRedis]): RedisRequestT[RedisIntBool] =
+  result = newRedisRequest[RedisRequestT[RedisIntBool]](redis)
+  result.addCmd("EXISTS", key)
+  if keys.len() > 0:
+    result.add(data = keys)
 
-proc expire*(redis: Redis, key: string, timeout: Duration): Future[bool] {.async.} =
-  let res = await redis.cmd("EXPIRE", key, timeout.inSeconds)
-  result = (res.integer == 1)
+# EXPIRE key seconds [NX|XX|GT|LT] 
+proc expire*(redis: Redis, key: string, timeout: Duration, expireType: RedisExpireType = REDIS_EXPIRE_NOT_SET): RedisRequestT[RedisIntBool] =
+  result = newRedisRequest[RedisRequestT[RedisIntBool]](redis)
+  result.addCmd("EXPIRE", key, timeout.inSeconds)
+  if expireType != REDIS_EXPIRE_NOT_SET:
+    result.add($expireType)
 
-proc expireAt*(redis: Redis, key: string, timeout: Time | DateTime): Future[bool] {.async.} =
+# EXPIREAT key timestamp [NX|XX|GT|LT] 
+proc expireAt*(redis: Redis, key: string, timeout: Time | DateTime, expireType: RedisExpireType = REDIS_EXPIRE_NOT_SET): RedisRequestT[RedisIntBool] =
   var ts: int64
   when timeout is Time:
     ts = timeout.toUnix()
   else:
     ts = timeout.toTime().toUnix()
-  let res = await redis.cmd("EXPIREAT", key, ts)
-  result = (res.integer == 1)
+  result = newRedisRequest[RedisRequestT[RedisIntBool]](redis)
+  result.addCmd("EXPIREAT", key, ts)
+  if expireType != REDIS_EXPIRE_NOT_SET:
+    result.add($expireType)
 
-proc expireTime*(redis: Redis, key: string): Future[Time] {.async.} =
-  let res = await redis.cmd("EXPIRETIME", key)
-  result = res.integer.fromUnix()
+# EXPIRETIME key 
+proc expireTime*(redis: Redis, key: string): RedisRequestT[Time] =
+  result = newRedisRequest[RedisRequestT[Time]](redis)
+  result.addCmd("EXPIRETIME", key)
 
-proc keys*(redis: Redis, pattern: string): Future[seq[string]] {.async.} =
-  result = @[]
-  let res = await redis.cmd("KEYS", pattern)
-  for key in res.arr:
-    if key.str.isSome:
-      result.add(key.str.get())
+# KEYS pattern 
+proc keys*(redis: Redis, pattern: string): RedisArrayRequest[string] =
+  result = newRedisRequest[RedisArrayRequest[string]](redis)
+  result.addCmd("KEYS", pattern)
 
-proc move*(redis:Redis, key: string, db: int): Future[bool] {.async.} =
-  let res = await redis.cmd("MOVE", key, db)
-  result = (res.integer == 1)
+# MOVE key db 
+proc move*(redis:Redis, key: string, db: int): RedisRequestT[RedisIntBool] =
+  result = newRedisRequest[RedisRequestT[RedisIntBool]](redis)
+  result.addCmd("MOVE", key, db)
 
-proc persist*(redis:Redis, key: string): Future[bool] {.async.} =
-  let res = await redis.cmd("PERSIST", key)
-  result = (res.integer == 1)
+# PERSIST key 
+proc persist*(redis:Redis, key: string): RedisRequestT[RedisIntBool] =
+  result = newRedisRequest[RedisRequestT[RedisIntBool]](redis)
+  result.addCmd("PERSIST", key)
 
-proc pexpire*(redis:Redis, key: string, timeout: Duration): Future[bool] {.async.} =
-  let res = await redis.cmd("PEXPIRE", key, timeout.inMilliseconds)
-  result = (res.integer == 1)
+# PEXPIRE key milliseconds [NX|XX|GT|LT]
+proc pexpire*(redis:Redis, key: string, timeout: Duration, expireType: RedisExpireType = REDIS_EXPIRE_NOT_SET): RedisRequestT[RedisIntBool] =
+  result = newRedisRequest[RedisRequestT[RedisIntBool]](redis)
+  result.addCmd("PEXPIRE", key, timeout.inMilliseconds)
+  if expireType != REDIS_EXPIRE_NOT_SET:
+    result.add($expireType)
 
-proc pexpireAt*(redis: Redis, key: string, timeout: Time | DateTime): Future[bool] {.async.} =
+# PEXPIREAT key milliseconds-timestamp [NX|XX|GT|LT] 
+proc pexpireAt*(redis: Redis, key: string, timeout: Time | DateTime, expireType: RedisExpireType = REDIS_EXPIRE_NOT_SET): RedisRequestT[RedisIntBool] =
   var ts: float
   when timeout is Time:
     ts = timeout.toUnixFloat()
   else:
     ts = timeout.toTime().toUnixFloat()
-  let res = await redis.cmd("PEXPIREAT", key, (ts*1000).int64)
-  result = (res.integer == 1)
+  result = newRedisRequest[RedisRequestT[RedisIntBool]](redis)
+  result.addCmd("PEXPIREAT", key, (ts*1000).int64)
+  if expireType != REDIS_EXPIRE_NOT_SET:
+    result.add($expireType)
 
-proc pexpireTime*(redis: Redis, key: string): Future[Time] {.async.} =
-  let res = await redis.cmd("PEXPIRETIME", key)
-  result = (res.integer.float/1000).fromUnixFloat()
+# PEXPIRETIME key 
+proc pexpireTime*(redis: Redis, key: string): RedisRequestT[RedisTimeMillis] =
+  result = newRedisRequest[RedisRequestT[RedisTimeMillis]](redis)
+  result.addCmd("PEXPIRETIME", key)
 
-proc pTTL*(redis: Redis, key: string): Future[Duration] {.async.} =
-  let res = await redis.cmd("PTTL", key)
-  if res.integer == -1:
-    raise newException(RedisKeyDoesntExist, "Key " & key & " doesn't exist")
-  elif res.integer == -2:
-    raise newException(RedisKeyDoesntExpire, "Key " & key & " can't expire")
-  result = initDuration(milliseconds = res.integer)
+# PTTL key 
+proc pTTL*(redis: Redis, key: string): RedisRequestT[RedisDurationMillis] =
+  result = newRedisRequest[RedisRequestT[RedisDurationMillis]](redis)
+  result.addCmd("PTTL", key)
 
-proc randomKey*(redis: Redis): Future[Option[string]] {.async.} =
-  let res = await redis.cmd("RANDOMKEY")
-  result = res.str
+# RANDOMKEY
+proc randomKey*(redis: Redis): RedisRequestT[Option[string]] =
+  result = newRedisRequest[RedisRequestT[Option[string]]](redis)
+  result.addCmd("RANDOMKEY")
 
-proc rename*(redis: Redis, key: string, newKey: string): Future[bool] {.async.} =
-  let res = await redis.cmd("RENAME", key, newKey)
-  result = res.str.get("") == "OK"
+# RENAME key newkey 
+proc rename*(redis: Redis, key: string, newKey: string): RedisRequestT[RedisStrBool] =
+  result = newRedisRequest[RedisRequestT[RedisStrBool]](redis)
+  result.addCmd("RENAME", key, newKey)
 
-proc renameNX*(redis: Redis, key: string, newKey: string): Future[bool] {.async.} =
-  let res = await redis.cmd("RENAMENX", key, newKey)
-  result = res.integer == 1
+# RENAMENX key newkey 
+proc renameNX*(redis: Redis, key: string, newKey: string): RedisRequestT[RedisIntBool] =
+  result = newRedisRequest[RedisRequestT[RedisIntBool]](redis)
+  result.addCmd("RENAMENX", key, newKey)
 
-proc scan*(redis: Redis, match: Option[string] = string.none, count: int = -1): RedisScanCursor =
-  #  SCAN cursor [MATCH pattern] [COUNT count] [TYPE type]
-  var args: seq[RedisMessage] = @[]
+# SCAN cursor [MATCH pattern] [COUNT count] [TYPE type]
+proc scan*(redis: Redis, match: Option[string] = string.none, count: int = -1): RedisCursorRequest =
+  result = newRedisCursor(redis)
+  result.addCmd("SCAN", 0)
   if match.isSome:
-    args.add("MATCH".encodeRedis())
-    args.add(match.get().encodeRedis())
+    result.add("MATCH", match.get())
   if count > 0:
-    args.add("COUNT".encodeRedis())
-    args.add(count.encodeRedis())
-  result = newRedisCursor[RedisScanCursor](redis, "SCAN", args=args)
-  result.scanReply = @[]
+    result.add("COUNT", count)
 
-proc next*(cursor: RedisScanCursor): Future[tuple[running: bool, result: string]] {.async.} =
-  if cursor.scanReply.len == 0 and not cursor.exhausted:
-    let repl = await cast[RedisCursor](cursor).next()
-    if repl.isNil:
-      cursor.scanReply = @[]
-    else:
-      cursor.scanReply = repl.arr
-  if cursor.scanReply.len == 0:
-    result = (false, "")
-  else:
-    result = (true, cursor.scanReply.pop().str.get())
+# SORT key [BY pattern] [LIMIT offset count] [GET pattern [GET pattern ...]] [ASC|DESC] [ALPHA] [STORE destination]
+proc realSort(
+  req: RedisRequest, key: string, 
+  storeKey: Option[string], 
+  by: Option[string], 
+  limit: Option[Slice[int]], 
+  gets: seq[string], 
+  sortOrder: RedisSortOrder, alpha: bool)
 
-proc realSort(redis: Redis, key: string, storeKey = string.none, by = string.none, limit = Slice[int].none, sortOrder = REDIS_SORT_ASC, alpha = false, gets: seq[string] = @[]): Future[RedisMessage] {.async.}
+proc sort*(
+  redis: Redis, key: string, 
+  by: Option[string] = string.none, 
+  limit: Option[Slice[int]] = Slice[int].none, 
+  gets: seq[string] = @[], 
+  sortOrder: RedisSortOrder = REDIS_SORT_ASC, alpha = false): RedisArrayRequest[string] =
+  result = newRedisRequest[RedisArrayRequest[string]](redis)
+  result.realSort(key, string.none, by, limit, gets, sortOrder, alpha)
 
-proc sort*(redis: Redis, key: string, by = string.none, limit = Slice[int].none, sortOrder = REDIS_SORT_ASC, alpha = false, gets: seq[string] = @[]): Future[seq[string]] {.async.} =
-  result = @[]
-  let res = await redis.realSort(key, by=by, limit=limit, sortOrder=sortOrder, alpha=alpha, gets=gets)
-  for r in res.arr:
-    result.add(r.str.get())
+proc sortStore*(redis: Redis, key: string, storeKey: string,
+  by: Option[string] = string.none, 
+  limit: Option[Slice[int]] = Slice[int].none, 
+  gets: seq[string] = @[], 
+  sortOrder: RedisSortOrder = REDIS_SORT_ASC, alpha = false): RedisRequestT[int64] =
+  result = newRedisRequest[RedisRequestT[int64]](redis)
+  result.realSort(key, storeKey.option, by, limit, gets, sortOrder, alpha)
 
-proc sortAndStore*(redis: Redis, key: string, storeKey: string, by = string.none, limit = Slice[int].none, sortOrder = REDIS_SORT_ASC, alpha = false, gets: seq[string] = @[]): Future[int64] {.async.} =
-  let res = await redis.realSort(key, storeKey=storeKey.option, by=by, limit=limit, sortOrder=sortOrder, alpha=alpha, gets=gets)
-  result = res.integer
+# TOUCH key [key ...]
+proc touch*(redis: Redis, key: string, keys: varargs[RedisMessage, encodeRedis]): RedisRequestT[int64] =
+  result = newRedisRequest[RedisRequestT[int64]](redis)
+  result.addCmd("TOUCH", key)
+  if keys.len > 0:
+    result.add(data = keys)
 
-template touch*(redis: Redis, keys: varargs[string, `$`]): untyped =
-  block:
-    proc realTouch(): Future[int] {.async.} =
-      var res: RedisMessage
-      var args: seq[RedisMessage] = @[]
-      for k in keys:
-        args.add(k.encodeRedis())
-      res = await cmd(redis, "TOUCH", args=args)
-      result = res.integer.int
-    realTouch()
+# TTL key 
+proc ttl*(redis: Redis, key: string): RedisRequestT[Duration] =
+  result = newRedisRequest[RedisRequestT[Duration]](redis)
+  result.addCmd("TTL", key)
 
-proc ttl*(redis: Redis, key: string): Future[Duration] {.async.} =
-  let res = await redis.cmd("TTL", key)
-  if res.integer == -1:
-    raise newException(RedisKeyDoesntExist, "Key " & key & " doesn't exist")
-  elif res.integer == -2:
-    raise newException(RedisKeyDoesntExpire, "Key " & key & " can't expire")
-  result = initDuration(seconds = res.integer)
+# TYPE key 
+proc getType*(redis: Redis, key: string): RedisRequestT[Option[string]] =
+  result = newRedisRequest[RedisRequestT[Option[string]]](redis)
+  result.addCmd("TYPE", key)
 
-template unlink*(redis: Redis, keys: varargs[string, `$`]): untyped =
-  block:
-    proc realUnlink(): Future[int] {.async.} =
-      var res: RedisMessage
-      var args: seq[RedisMessage] = @[]
-      for k in keys:
-        args.add(k.encodeRedis())
-      res = await cmd(redis, "UNLINK", args=args)
-      result = res.integer.int
-    realUnlink()
+# UNLINK key [key ...]
+proc unlink*(redis: Redis, key: string, keys: varargs[RedisMessage, encodeRedis]): RedisRequestT[int64] =
+  result = newRedisRequest[RedisRequestT[int64]](redis)
+  result.addCmd("UNLINK", key)
+  if keys.len > 0:
+    result.add(data = keys)
 
 #------- pvt
 
-proc realSort(redis: Redis, key: string, storeKey = string.none, by = string.none, limit = Slice[int].none, sortOrder = REDIS_SORT_ASC, alpha = false, gets: seq[string] = @[]): Future[RedisMessage] {.async.} =
-  var args: seq[RedisMessage]
-  args.add(key.encodeRedis())
+proc realSort(
+  req: RedisRequest, key: string, 
+  storeKey: Option[string], 
+  by: Option[string], 
+  limit: Option[Slice[int]], 
+  gets: seq[string], 
+  sortOrder: RedisSortOrder, alpha: bool) =
+  req.addCmd("SORT", key)
   if by.isSome:
-    args.add("BY".encodeRedis())
-    args.add(by.get().encodeRedis())
+    req.add("BY", by.get())
   if limit.isSome:
     let lmt = limit.get()
-    args.add("LIMIT".encodeRedis())
-    args.add(lmt.a.encodeRedis())
-    args.add(lmt.b.encodeRedis())
-  for g in gets:
-    args.add("GET".encodeRedis())
-    args.add(g.encodeRedis())
+    req.add("LIMIT", lmt.a, lmt.b)
+  if gets.len > 0:
+    for get in gets:
+      req.add("GET", get)
   case sortOrder
   of REDIS_SORT_ASC:
     discard
   of REDIS_SORT_DESC:
-    args.add("DESC".encodeRedis())
+    req.add("DESC")
   of REDIS_SORT_NONE:
     if by.isNone:
-      args.add("BY".encodeRedis())
-      args.add("nosort".encodeRedis())
+      req.add("BY", "nosort")
   if alpha:
-    args.add("ALPHA".encodeRedis())
+    req.add("ALPHA")
   if storeKey.isSome:
-    args.add("STORE".encodeRedis())
-    args.add(storeKey.get().encodeRedis())
-  result = await redis.cmd("SORT", args=args)
+    req.add("STORE", storeKey.get())
