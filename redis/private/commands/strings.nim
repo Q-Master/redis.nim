@@ -1,4 +1,4 @@
-import std/[asyncdispatch, strutils, tables, times, macros, options]
+import std/[asyncdispatch, times, options]
 import ./cmd
 import ../exceptions
 

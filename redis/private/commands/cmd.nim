@@ -123,56 +123,64 @@ proc execute*[T](req: RedisRequestT[T]): Future[T] {.async.} =
 proc execute*(req: RedisArrayRequest[bool]): Future[seq[bool]] {.async.} =
   result = @[]
   let res = await cast[RedisRequest](req).execute()
-  for x in res.arr:
-    result.add(x.boolean)
+  if res.kind != REDIS_MESSAGE_NIL:
+    for x in res.arr:
+      result.add(x.boolean)
 
 proc execute*(req: RedisArrayRequest[Option[string]]): Future[seq[Option[string]]] {.async.} =
   result = @[]
   let res = await cast[RedisRequest](req).execute()
-  for x in res.arr:
-    case x.kind
-    of REDIS_MESSAGE_NIL:
-      result.add(string.none)
-    of REDIS_MESSAGE_STRING, REDIS_MESSAGE_SIMPLESTRING:
-      result.add(x.str)
-    else:
-      raise newException(RedisCommandError, "Wrong type of reply for string array")
+  if res.kind != REDIS_MESSAGE_NIL:
+    for x in res.arr:
+      case x.kind
+      of REDIS_MESSAGE_NIL:
+        result.add(string.none)
+      of REDIS_MESSAGE_STRING, REDIS_MESSAGE_SIMPLESTRING:
+        result.add(x.str)
+      else:
+        raise newException(RedisCommandError, "Wrong type of reply for string array")
 
 proc execute*(req: RedisArrayRequest[string]): Future[seq[string]] {.async.} =
   result = @[]
   let res = await cast[RedisRequest](req).execute()
-  for x in res.arr:
-    if x.str.isSome:
-      result.add(x.str.get())
+  if res.kind != REDIS_MESSAGE_NIL:
+    for x in res.arr:
+      if x.str.isSome:
+        result.add(x.str.get())
 
 proc execute*(req: RedisArrayRequest[int64]): Future[seq[int64]] {.async.} =
   result = @[]
   let res = await cast[RedisRequest](req).execute()
-  for x in res.arr:
-      result.add(x.integer)
+  if res.kind != REDIS_MESSAGE_NIL:
+    for x in res.arr:
+        result.add(x.integer)
 
 proc execute*(req: RedisArrayRequest[float]): Future[seq[float]] {.async.} =
   result = @[]
   let res = await cast[RedisRequest](req).execute()
-  for x in res.arr:
-      result.add(x.double)
+  if res.kind != REDIS_MESSAGE_NIL:
+    for x in res.arr:
+        result.add(x.double)
 
 proc execute*(req: RedisArrayRequest[RedisIntBool]): Future[seq[bool]] {.async.} =
   result = @[]
   let res = await cast[RedisRequest](req).execute()
-  for x in res.arr:
-      result.add(x.integer > 0)
+  if res.kind != REDIS_MESSAGE_NIL:
+    for x in res.arr:
+        result.add(x.integer > 0)
 
 proc execute*(req: RedisArrayRequest[RedisStrBool]): Future[seq[bool]] {.async.} =
   result = @[]
   let res = await cast[RedisRequest](req).execute()
-  for x in res.arr:
-      result.add(x.str.get("") == "OK")
+  if res.kind != REDIS_MESSAGE_NIL:
+    for x in res.arr:
+        result.add(x.str.get("") == "OK")
 
 proc execute*[T](req: RedisArrayRequest[T]): Future[seq[T]] {.async.} =
   mixin fromRedisReq
   let res = await cast[RedisRequest](req).execute()
-  result = fromRedisReq(res)
+  if res.kind != REDIS_MESSAGE_NIL:
+    result = fromRedisReq(res)
 
 proc execute*(req: RedisCursorRequest): Future[RedisMessage] {.async.} =
   let res = await cast[RedisRequest](req).execute()
