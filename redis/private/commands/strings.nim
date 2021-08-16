@@ -178,7 +178,7 @@ proc mGet*(redis: Redis, key: string, keys: varargs[RedisMessage, encodeRedis]):
 # MSET key value [key value ...] 
 proc mSet*[T](redis: Redis, keyValue: tuple[a: string, b: T], keyValues: varargs[tuple[a: string, b: T]]): RedisRequestT[RedisStrBool] =
   result = newRedisRequest[RedisRequestT[RedisStrBool]](redis)
-  result.addCmd("MSET", keyValue)
+  result.addCmd("MSET", keyValue.a, keyValue.b)
   for kv in keyValues:
     result.add(kv.a, kv.b)
 
@@ -298,7 +298,7 @@ proc execute*(req: RedisSetGetRequest): Future[Option[string]] {.async.} =
   result = res.str
 
 # SETNX key value 
-proc setNx*(redis: Redis, key, value: string): RedisRequestT[RedisIntBool] =
+proc setNx*[T](redis: Redis, key: string, value: T): RedisRequestT[RedisIntBool] =
   result = newRedisRequest[RedisRequestT[RedisIntBool]](redis)
   result.addCmd("SETNX", key, value)
 
