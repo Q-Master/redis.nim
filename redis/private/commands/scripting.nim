@@ -2,7 +2,7 @@ import std/[sha1]
 import ./cmd
 
 #[
-  Block of scripts commands 
+  Block of scripting commands 
     EVAL
     EVALSHA
     EVALSHA_RO
