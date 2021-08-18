@@ -1,5 +1,5 @@
 import std/asyncdispatch
-import std/[strutils, sets, tables, hashes, json, options]
+import std/[strutils, sets, tables, hashes, json, options, sha1]
 import ./connection
 import ./exceptions
 
@@ -62,6 +62,7 @@ proc encodeRedis*[T: SomeSignedInt | SomeUnsignedInt](x: T): RedisMessage
 proc encodeRedis*[T: float | float32 | float64](x: T): RedisMessage
 proc encodeRedis*(x: string): RedisMessage
 proc encodeRedis*(x: bool): RedisMessage
+proc encodeRedis*(x: SecureHash): RedisMessage
 proc encodeRedis*[T](x: openArray[T]): RedisMessage
 proc encodeRedis*[T](x: tuple[a: string, b: T]): RedisMessage
 proc encodeRedis*[T](x: array[0..0, (string, T)]): RedisMessage
@@ -307,8 +308,8 @@ proc processAggregateItem(redis: Redis, resTyp: RedisMessageKind, item: string):
     # It is really a map like MAP reply type, but we'll ignore it by now.
     if arraySize != -1:
       for _ in 0 ..< arraySize:
-        let key = await redis.parseResponse(key = true)
-        let value = await redis.parseResponse()
+        let key {.used.} = await redis.parseResponse(key = true)
+        let value {.used.} = await redis.parseResponse()
   else:
     raise newException(RedisTypeError, "Wrong type for aggregate item")
 
@@ -321,6 +322,8 @@ proc encodeRedis*(x: string): RedisMessage =
   result.str = x.option
 proc encodeRedis*(x: bool): RedisMessage =
   result = RedisMessage(kind: REDIS_MESSAGE_BOOL, boolean: x)
+proc encodeRedis*(x: SecureHash): RedisMessage =
+  result = RedisMessage(kind: REDIS_MESSAGE_STRING, str: ($x).option)
 proc encodeRedis*[T](x: openArray[T]): RedisMessage =
   result = RedisMessage(kind: REDIS_MESSAGE_ARRAY, arr: @[])
   for v in x:

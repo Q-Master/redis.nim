@@ -1,4 +1,4 @@
-import std/[asyncdispatch, strutils, options, times]
+import std/[asyncdispatch, strutils, options, times, sha1]
 import ../connection
 import ../proto
 import ../exceptions
@@ -114,6 +114,10 @@ proc execute*(req: RedisRequestT[RedisDurationMillis]): Future[Duration] {.async
   elif res.integer == -2:
     raise newException(RedisKeyDoesntExpire, "Key can't expire")
   result = initDuration(milliseconds = res.integer)
+
+proc execute*(req: RedisRequestT[SecureHash]): Future[SecureHash] {.async.} =
+  let res = await cast[RedisRequest](req).execute()
+  result = parseSecureHash(res.str.get())
 
 proc execute*[T](req: RedisRequestT[T]): Future[T] {.async.} =
   mixin fromRedisReq

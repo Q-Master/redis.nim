@@ -6,11 +6,12 @@ import private/commands/strings as strings_cmds
 import private/commands/lists as lists_cmds
 import private/commands/sets as sets_cmds
 import private/commands/hashes as hashes_cmds
+import private/commands/scripts as scripts_cmds
 import private/tools/asyncfor
 
 export proto
 export connection except readLine, readRawString
 export Redis, RedisObj, RedisMessage, RedisMessageObj, RedisMessageKind
 export exceptions
-export cmd, conneciton_cmds, keys_cmds, strings_cmds, sets_cmds, hashes_cmds
+export cmd, conneciton_cmds, keys_cmds, strings_cmds, sets_cmds, hashes_cmds, scripts_cmds
 export asyncfor

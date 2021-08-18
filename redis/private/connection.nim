@@ -115,8 +115,7 @@ proc sendLine*(redis: Redis, data: seq[string]) {.async.} =
   var line = data.join("\r\L")
   line = line & "\r\L"
   #echo "CMD: ", line
-  let size = await redis.sock.send(line)
-
+  let size {.used.} = await redis.sock.send(line)
 
 proc needsAuth*(redis: Redis): bool = redis.needsAuth
 
