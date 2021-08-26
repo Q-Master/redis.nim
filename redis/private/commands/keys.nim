@@ -144,21 +144,13 @@ proc renameNX*(redis: Redis, key: string, newKey: string): RedisRequestT[RedisIn
   result.addCmd("RENAMENX", key, newKey)
 
 # SCAN cursor [MATCH pattern] [COUNT count] [TYPE type]
-proc scan*(redis: Redis, match: Option[string] = string.none, count: int = -1): RedisCursorRequest =
-  result = newRedisCursor(redis)
+proc scan*(redis: Redis, match: Option[string] = string.none, count: int = -1): RedisCursorRequestT[string] =
+  result = newRedisCursor[RedisCursorRequestT[string]](redis)
   result.addCmd("SCAN", 0)
   if match.isSome:
     result.add("MATCH", match.get())
   if count > 0:
     result.add("COUNT", count)
-
-const
-  # SSCAN key cursor [MATCH pattern] [COUNT count] 
-  sscan* = scan
-  # HSCAN key cursor [MATCH pattern] [COUNT count] 
-  hscan* = scan
-  # ZSCAN key cursor [MATCH pattern] [COUNT count] 
-  zscan* = scan
 
 # SORT key [BY pattern] [LIMIT offset count] [GET pattern [GET pattern ...]] [ASC|DESC] [ALPHA] [STORE destination]
 proc realSort(

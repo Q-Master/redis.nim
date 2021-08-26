@@ -1,4 +1,4 @@
-import std/[options, tables]
+import std/[asyncdispatch, options, tables]
 import ./cmd
 
 #[
@@ -43,10 +43,10 @@ proc hGetAll*(redis: Redis, key: string): RedisArrayRequest[Table[string, string
   result = newRedisRequest[RedisArrayRequest[Table[string, string]]](redis)
   result.addCmd("HGETALL", key)
 
-proc fromRedisReq*(req: RedisArrayRequest[Table[string, string]]): Table[string, string] =
+proc fromRedisReq*(_: type[Table[string, string]], req: RedisMessage): Table[string, string] =
   result = initTable[string, string]()
-  for i in countup(0, req.req.arr.len-1, 2):
-    result[req.req.arr[i].str.get()] = req.req.arr[i+1].str.get()
+  for i in countup(0, req.arr.len-1, 2):
+    result[req.arr[i].str.get()] = req.arr[i+1].str.get()
 
 # HINCRBY key field increment 
 proc hIncrBy*(redis: Redis, key, field: string, increment: SomeInteger): RedisRequestT[int64] =
@@ -94,6 +94,22 @@ proc hRandField*(redis: Redis, key: string, count: SomeInteger): RedisArrayReque
 proc hRandFieldWithValues*(redis: Redis, key: string, count: SomeInteger): RedisArrayRequest[Table[string, string]] =
   result = newRedisRequest[RedisArrayRequest[Table[string, string]]](redis)
   result.addCmd("HRANDFIELD", key, count.int64, "WITHVALUES")
+
+# HSCAN key cursor [MATCH pattern] [COUNT count] 
+proc hScan*(redis: Redis, match: Option[string] = string.none, count: int = -1): RedisCursorRequestT[tuple[key: string, value: string]] =
+  result = newRedisCursor[RedisCursorRequestT[tuple[key: string, value: string]]](redis)
+  result.addCmd("HSCAN", 0)
+  if match.isSome:
+    result.add("MATCH", match.get())
+  if count > 0:
+    result.add("COUNT", count)
+
+proc next*(cursor: RedisCursorRequestT[tuple[key: string, value: string]]): Future[tuple[stop: bool, res: tuple[key: string, value: string]]] {.async.} =
+  let res = await cast[RedisCursorRequest](cursor).next()
+  if res[0]:
+    result = (true, ("", ""))
+  else:
+    result = (false, (res[1].arr[0].str.get(), res[1].arr[1].str.get()))
 
 # HSET key field value [field value ...] 
 proc hSet*[T](redis: Redis, key: string, fieldValue: tuple[a: string, b: T], fieldValues: varargs[tuple[a: string, b: T]]): RedisRequestT[int64] =

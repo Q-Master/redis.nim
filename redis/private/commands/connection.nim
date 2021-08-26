@@ -110,8 +110,8 @@ proc clientID*(redis: Redis): RedisRequestT[int64] =
 # CLIENT INFO 
 proc parseClientInfo(line: string): ClientInfo
 
-proc fromRedisReq*(req: RedisRequestT[ClientInfo]): ClientInfo =
-  var str = req.req.str.get("")
+proc fromRedisReq*(_: type[ClientInfo], req: RedisMessage): ClientInfo =
+  var str = req.str.get("")
   str.stripLineEnd()
   result = str.parseClientInfo()
 
@@ -120,9 +120,9 @@ proc clientInfo*(redis: Redis): RedisRequestT[ClientInfo] =
   result.addCmd("CLIENT INFO")
 
 # CLIENT LIST [TYPE normal|master|replica|pubsub] [ID client-id [client-id ...]] 
-proc fromRedisReq*(req: RedisArrayRequest[ClientInfo]): seq[ClientInfo] =
+proc fromRedisReq*(_: type[seq[ClientInfo]], req: RedisMessage): seq[ClientInfo] =
   result = @[]
-  var str = req.req.str.get("")
+  var str = req.str.get("")
   str.stripLineEnd()
   for s in str.split('\n'):
     result.add(s.parseClientInfo())
@@ -148,28 +148,28 @@ proc echo*(redis: Redis, msg: string): RedisRequestT[string] =
   result.addCmd("ECHO", msg)
 
 # HELLO [protover [AUTH username password] [SETNAME clientname]]
-proc fromRedisReq*(req:RedisRequestT[RedisHello]): RedisHello =
+proc fromRedisReq*(_: type[RedisHello], req: RedisMessage): RedisHello =
   result.new
-  case req.req.kind
+  case req.kind
   of REDIS_MESSAGE_ARRAY:
     # RESP2 reply
-    result.server = req.req.arr[1].str.get()
-    result.version = req.req.arr[3].str.get()
-    result.proto = req.req.arr[5].integer.int
-    result.id = req.req.arr[7].integer.int
-    result.mode =  req.req.arr[9].str.get()
-    result.role =  req.req.arr[11].str.get()
-    for m in req.req.arr[13].arr:
+    result.server = req.arr[1].str.get()
+    result.version = req.arr[3].str.get()
+    result.proto = req.arr[5].integer.int
+    result.id = req.arr[7].integer.int
+    result.mode = req.arr[9].str.get()
+    result.role = req.arr[11].str.get()
+    for m in req.arr[13].arr:
       result.modules.add(m.str.get())
   of REDIS_MESSAGE_MAP:
     # RESP3 reply
-    result.server = req.req.map["server"].str.get()
-    result.version = req.req.map["version"].str.get()
-    result.proto = req.req.map["proto"].integer.int
-    result.id = req.req.map["id"].integer.int
-    result.mode =  req.req.map["mode"].str.get()
-    result.role =  req.req.map["role"].str.get()
-    for m in req.req.map["modules"].arr:
+    result.server = req.map["server"].str.get()
+    result.version = req.map["version"].str.get()
+    result.proto = req.map["proto"].integer.int
+    result.id = req.map["id"].integer.int
+    result.mode = req.map["mode"].str.get()
+    result.role = req.map["role"].str.get()
+    for m in req.map["modules"].arr:
       result.modules.add(m.str.get())
   else:
     raise newException(RedisCommandError, "Unexpected reply for HELLO")

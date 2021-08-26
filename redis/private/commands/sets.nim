@@ -108,6 +108,15 @@ proc sRem*(redis: Redis, key, member: string, members: varargs[RedisMessage, enc
   result.addCmd("SREM", key, member)
   result.add(data = members)
 
+# SSCAN key cursor [MATCH pattern] [COUNT count] 
+proc sScan*(redis: Redis, match: Option[string] = string.none, count: int = -1): RedisCursorRequestT[string] =
+  result = newRedisCursor[RedisCursorRequestT[string]](redis)
+  result.addCmd("SSCAN", 0)
+  if match.isSome:
+    result.add("MATCH", match.get())
+  if count > 0:
+    result.add("COUNT", count)
+
 # SUNION key [key ...] 
 proc sUnion*(redis: Redis, key: string, keys: varargs[RedisMessage, encodeRedis]): RedisArrayRequest[string] =
   result = newRedisRequest[RedisArrayRequest[string]](redis)

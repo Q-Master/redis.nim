@@ -15,12 +15,15 @@ type
   RedisIntBool* = distinct bool
   RedisTimeMillis* = object
   RedisDurationMillis* = object
+  RedisStrFloat* = object
+  RedisStrInt* = object
 
   RedisRequestT*[T] = ref object of RedisRequest
   RedisArrayRequest*[T] = ref object of RedisRequest
   RedisCursorRequest* = ref object of RedisRequest
     exhausted: bool
     reply: RedisMessage
+  RedisCursorRequestT*[T] = ref object of RedisCursorRequest
 
 proc initRedisRequest*(req: RedisRequest, redis: Redis) =
   req.redis = redis
@@ -30,11 +33,11 @@ proc newRedisRequest*[T: RedisRequest](redis: Redis): T =
   result.new
   result.initRedisRequest(redis)
 
-proc resetRedisCursor*(cursor: RedisCursorRequest) =
+proc resetRedisCursor*[T: RedisCursorRequest](cursor: T) =
   cursor.exhausted = false
   cursor.req.arr[1] = 0.encodeRedis()
 
-proc newRedisCursor*(redis: Redis): RedisCursorRequest =
+proc newRedisCursor*[T: RedisCursorRequest](redis: Redis): T =
   result.new
   result.initRedisRequest(redis)
   result.resetRedisCursor()
@@ -76,9 +79,44 @@ proc execute*[T: SomeInteger](req: RedisRequestT[T]): Future[T] {.async.} =
   let res = await cast[RedisRequest](req).execute()
   result = T(res.integer)
 
+proc execute*[T: SomeInteger](req: RedisRequestT[Option[T]]): Future[Option[T]] {.async.} =
+  let res = await cast[RedisRequest](req).execute()
+  if res.kind == REDIS_MESSAGE_NIL:
+    result = T.none
+  else:
+    result = T(res.integer).option
+
+proc execute*(req: RedisRequestT[RedisStrInt]): Future[int64] {.async.} =
+  let res = await cast[RedisRequest](req).execute()
+  result = res.str.get("0").parseInt()
+
+proc execute*(req: RedisRequestT[Option[RedisStrInt]]): Future[Option[int64]] {.async.} =
+  let res = await cast[RedisRequest](req).execute()
+  if res.kind == REDIS_MESSAGE_NIL:
+    result = int64.none
+  else:
+    if res.str.isSome:
+      result = res.str.get().parseInt().int64.option
+    else:
+      result = int64.none
+
 proc execute*(req: RedisRequestT[float]): Future[float] {.async.} =
   let res = await cast[RedisRequest](req).execute()
   result = res.double
+
+proc execute*(req: RedisRequestT[RedisStrFloat]): Future[float] {.async.} =
+  let res = await cast[RedisRequest](req).execute()
+  result = res.str.get("0").parseFloat()
+
+proc execute*(req: RedisRequestT[Option[RedisStrFloat]]): Future[Option[float]] {.async.} =
+  let res = await cast[RedisRequest](req).execute()
+  if res.kind == REDIS_MESSAGE_NIL:
+    result = float.none
+  else:
+    if res.str.isSome:
+      result = res.str.get().parseFloat().option
+    else:
+      result = float.none
 
 proc execute*(req: RedisRequestT[Option[string]]): Future[Option[string]] {.async.} =
   let res = await cast[RedisRequest](req).execute()
@@ -122,7 +160,7 @@ proc execute*(req: RedisRequestT[SecureHash]): Future[SecureHash] {.async.} =
 proc execute*[T](req: RedisRequestT[T]): Future[T] {.async.} =
   mixin fromRedisReq
   let res = await cast[RedisRequest](req).execute()
-  result = fromRedisReq(res)
+  result = T.fromRedisReq(res)
 
 proc execute*(req: RedisArrayRequest[bool]): Future[seq[bool]] {.async.} =
   result = @[]
@@ -159,12 +197,46 @@ proc execute*(req: RedisArrayRequest[int64]): Future[seq[int64]] {.async.} =
     for x in res.arr:
         result.add(x.integer)
 
+proc execute*(req: RedisArrayRequest[RedisStrInt]): Future[seq[int64]] {.async.} =
+  result = @[]
+  let res = await cast[RedisRequest](req).execute()
+  if res.kind != REDIS_MESSAGE_NIL:
+    for x in res.arr:
+        result.add(x.str.get("0").parseInt())
+
+proc execute*(req: RedisArrayRequest[Option[RedisStrInt]]): Future[seq[Option[int64]]] {.async.} =
+  result = @[]
+  let res = await cast[RedisRequest](req).execute()
+  if res.kind != REDIS_MESSAGE_NIL:
+    for x in res.arr:
+        if x.str.isSome:
+          result.add(x.str.get.parseInt().int64.option)
+        else:
+          result.add(int64.none)
+
 proc execute*(req: RedisArrayRequest[float]): Future[seq[float]] {.async.} =
   result = @[]
   let res = await cast[RedisRequest](req).execute()
   if res.kind != REDIS_MESSAGE_NIL:
     for x in res.arr:
         result.add(x.double)
+
+proc execute*(req: RedisArrayRequest[RedisStrFloat]): Future[seq[float]] {.async.} =
+  result = @[]
+  let res = await cast[RedisRequest](req).execute()
+  if res.kind != REDIS_MESSAGE_NIL:
+    for x in res.arr:
+        result.add(x.str.get("0").parseFloat())
+
+proc execute*(req: RedisArrayRequest[Option[RedisStrFloat]]): Future[seq[Option[float]]] {.async.} =
+  result = @[]
+  let res = await cast[RedisRequest](req).execute()
+  if res.kind != REDIS_MESSAGE_NIL:
+    for x in res.arr:
+        if x.str.isSome:
+          result.add(x.str.get.parseFloat().option)
+        else:
+          result.add(float.none)
 
 proc execute*(req: RedisArrayRequest[RedisIntBool]): Future[seq[bool]] {.async.} =
   result = @[]
@@ -184,7 +256,7 @@ proc execute*[T](req: RedisArrayRequest[T]): Future[seq[T]] {.async.} =
   mixin fromRedisReq
   let res = await cast[RedisRequest](req).execute()
   if res.kind != REDIS_MESSAGE_NIL:
-    result = fromRedisReq(res)
+    result = fromRedisReq(seq[T], res)
 
 proc execute*(req: RedisCursorRequest): Future[RedisMessage] {.async.} =
   let res = await cast[RedisRequest](req).execute()
@@ -196,14 +268,22 @@ proc cmd*(redis: Redis, cmd: string, args: varargs[RedisMessage, encodeRedis]): 
   req.addCmd(cmd, args)
   result = req.execute()
 
-proc next*(cursor: RedisCursorRequest): Future[tuple[stop: bool, res: string]] {.async.} =
+proc next*(cursor: RedisCursorRequest): Future[tuple[stop: bool, res: RedisMessage]] {.async.} =
   if cursor.reply.arr.len == 0 and not cursor.exhausted:
     cursor.reply = await cursor.execute()
   if cursor.reply.arr.len == 0:
     cursor.exhausted = true
+    result = (true, nil)
+  else:
+    result = (false, cursor.reply.arr.pop())
+
+proc next*(cursor: RedisCursorRequestT[string]): Future[tuple[stop: bool, res: string]] {.async.} =
+  let res = await cast[RedisCursorRequest](cursor).next()
+  if res[0]:
     result = (true, "")
   else:
-    result = (false, cursor.reply.arr.pop().str.get())
+    result = (false, res[1].str.get())
+
 
 #------- pvt
 
