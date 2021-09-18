@@ -37,7 +37,8 @@ type
     px: bool
     persist: bool
 
-  RedisSetRequest* = ref object of RedisRequestT[RedisStrBool]
+  RedisSetRequest* = ref RedisSetRequestObj
+  RedisSetRequestObj* = object of RedisRequestT[RedisStrBool]
     ex: bool
     px: bool
     keepttl: bool
@@ -218,7 +219,7 @@ proc pSetEx*[T: Time | DateTime | Duration](redis: Redis, key: string, value: st
     result.add(timeout.inMilliseconds, value)
 
 # SET key value [EX seconds|PX milliseconds|EXAT timestamp|PXAT milliseconds-timestamp|KEEPTTL] [NX|XX] [GET]
-proc setVal*(redis: Redis, key, value: string): RedisSetRequest =
+proc set*(redis: Redis, key, value: string): RedisSetRequest =
   result = newRedisSetRequest(redis)
   result.addCmd("SET", key, value)
 

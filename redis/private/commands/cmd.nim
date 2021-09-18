@@ -13,13 +13,15 @@ type
 
   RedisStrBool* = distinct bool
   RedisIntBool* = distinct bool
-  RedisTimeMillis* = object
-  RedisDurationMillis* = object
-  RedisStrFloat* = object
-  RedisStrInt* = object
+  RedisTimeMillis* = object of RootObj
+  RedisDurationMillis* = object of RootObj
+  RedisStrFloat* = distinct float
+  RedisStrInt* = distinct int64
 
   RedisRequestT*[T] = ref object of RedisRequest
+    val: T
   RedisArrayRequest*[T] = ref object of RedisRequest
+    val: T
   RedisCursorRequest* = ref object of RedisRequest
     exhausted: bool
     reply: RedisMessage
@@ -57,6 +59,7 @@ proc add*[T: RedisRequest](req: T, data: varargs[RedisMessage, encodeRedis]): T 
     req.add(x)
 
 proc addCmd*[T: RedisRequest](req: T, cmd: string, args: varargs[RedisMessage, encodeRedis]): T {.discardable.} =
+  result = req
   result.req = encodeCommand(cmd, args)
 
 proc execute*(req: RedisRequest): Future[RedisMessage] {.async.} =
@@ -75,16 +78,71 @@ proc execute*(req: RedisRequestT[RedisIntBool]): Future[bool] {.async.} =
   let res = await cast[RedisRequest](req).execute()
   result = (res.integer > 0)
 
-proc execute*[T: SomeInteger](req: RedisRequestT[T]): Future[T] {.async.} =
+proc execute*(req: RedisRequestT[int64]): Future[int64] {.async.} =
   let res = await cast[RedisRequest](req).execute()
-  result = T(res.integer)
+  result = res.integer
 
-proc execute*[T: SomeInteger](req: RedisRequestT[Option[T]]): Future[Option[T]] {.async.} =
+proc execute*(req: RedisRequestT[uint64]): Future[uint64] {.async.} =
+  let res = await cast[RedisRequest](req).execute()
+  result = res.integer.uint64
+
+proc execute*(req: RedisRequestT[int32]): Future[int32] {.async.} =
+  let res = await cast[RedisRequest](req).execute()
+  result = res.integer.int32
+
+proc execute*(req: RedisRequestT[uint32]): Future[uint32] {.async.} =
+  let res = await cast[RedisRequest](req).execute()
+  result = res.integer.uint32
+
+proc execute*(req: RedisRequestT[int16]): Future[int16] {.async.} =
+  let res = await cast[RedisRequest](req).execute()
+  result = res.integer.int16
+
+proc execute*(req: RedisRequestT[uint16]): Future[uint16] {.async.} =
+  let res = await cast[RedisRequest](req).execute()
+  result = res.integer.uint16
+
+proc execute*(req: RedisRequestT[Option[int64]]): Future[Option[int64]] {.async.} =
   let res = await cast[RedisRequest](req).execute()
   if res.kind == REDIS_MESSAGE_NIL:
-    result = T.none
+    result = int64.none
   else:
-    result = T(res.integer).option
+    result = res.integer.option
+
+proc execute*(req: RedisRequestT[Option[uint64]]): Future[Option[uint64]] {.async.} =
+  let res = await cast[RedisRequest](req).execute()
+  if res.kind == REDIS_MESSAGE_NIL:
+    result = uint64.none
+  else:
+    result = res.integer.uint64.option
+
+proc execute*(req: RedisRequestT[Option[int32]]): Future[Option[int32]] {.async.} =
+  let res = await cast[RedisRequest](req).execute()
+  if res.kind == REDIS_MESSAGE_NIL:
+    result = int32.none
+  else:
+    result = res.integer.int32.option
+
+proc execute*(req: RedisRequestT[Option[uint32]]): Future[Option[uint32]] {.async.} =
+  let res = await cast[RedisRequest](req).execute()
+  if res.kind == REDIS_MESSAGE_NIL:
+    result = uint32.none
+  else:
+    result = res.integer.uint32.option
+
+proc execute*(req: RedisRequestT[Option[int16]]): Future[Option[int16]] {.async.} =
+  let res = await cast[RedisRequest](req).execute()
+  if res.kind == REDIS_MESSAGE_NIL:
+    result = int16.none
+  else:
+    result = res.integer.int16.option
+
+proc execute*(req: RedisRequestT[Option[uint16]]): Future[Option[uint16]] {.async.} =
+  let res = await cast[RedisRequest](req).execute()
+  if res.kind == REDIS_MESSAGE_NIL:
+    result = uint16.none
+  else:
+    result = res.integer.uint16.option
 
 proc execute*(req: RedisRequestT[RedisStrInt]): Future[int64] {.async.} =
   let res = await cast[RedisRequest](req).execute()

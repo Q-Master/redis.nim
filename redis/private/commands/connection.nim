@@ -103,8 +103,8 @@ proc clientGetRedir*(redis: Redis): RedisRequestT[int64] =
   result.addCmd("CLIENT GETREDIR")
 
 # CLIENT ID 
-proc clientID*(redis: Redis): RedisRequestT[int64] =
-  result = newRedisRequest[RedisRequestT[int64]](redis)
+proc clientID*(redis: Redis): RedisRequestT[uint64] =
+  result = newRedisRequest[RedisRequestT[uint64]](redis)
   result.addCmd("CLIENT ID")
 
 # CLIENT INFO 
