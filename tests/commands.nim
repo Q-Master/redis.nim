@@ -5,6 +5,19 @@ import redis/redis
 suite "Redis commands":
   setup:
     discard
+  
+  teardown:
+    proc killAll() {.async.} =
+      var pool = newRedisPool("localhost", 6379, 0, poolsize=2)
+      try:
+        var connection = await pool.acquire(5000)
+        discard await connection.flushAll().execute()
+        connection.release()
+      except RedisConnectionError:
+        echo "Can't connect to Redis instance"
+        fail()
+      await pool.close()
+    waitFor(killAll())
 
   test "Connection commands":
     const PING_TEST_MSG = "Test Message"
@@ -53,8 +66,15 @@ suite "Redis commands":
       var pool = newRedisPool("localhost", 6379, 0, poolsize=2)
       try:
         var connection = await pool.acquire(5000)
+        var boolRepl: bool
+        var strRepl: string
+        var intRepl: int64
         # SET key value [EX seconds|PX milliseconds|EXAT timestamp|PXAT milliseconds-timestamp|KEEPTTL] [NX|XX] [GET]
-        var boolRepl: bool = await connection.set(KEY1, TEST_STRING).execute()
+        boolRepl = await connection.set(KEY1, TEST_STRING).execute()
+        assert(boolRepl == true)
+        boolRepl = await connection.set(KEY1, TEST_STRING_1).nx().execute()
+        assert(boolRepl == false)
+        boolRepl = await connection.set(KEY2, TEST_STRING).nx().execute()
         assert(boolRepl == true)
         connection.release()
       except RedisConnectionError:
