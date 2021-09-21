@@ -4,14 +4,11 @@ import redis/redis
 
 suite "Redis commands":
   setup:
-    discard
-  
-  teardown:
     proc killAll() {.async.} =
       var pool = newRedisPool("localhost", 6379, 0, poolsize=2)
       try:
         var connection = await pool.acquire(5000)
-        discard await connection.flushAll().execute()
+        let x {.used.} = await connection.flushAll(REDIS_FLUSH_SYNC).execute()
         connection.release()
       except RedisConnectionError:
         echo "Can't connect to Redis instance"
@@ -27,29 +24,29 @@ suite "Redis commands":
       try:
         var connection = await pool.acquire(5000)
         let pingResp = await connection.ping().execute()
-        assert(pingResp == "PONG")
+        check(pingResp == "PONG")
         let echoResp = await connection.echo(PING_TEST_MSG).execute()
-        assert(echoResp == PING_TEST_MSG)
+        check(echoResp == PING_TEST_MSG)
         let pingRespWithString = await connection.ping(PING_TEST_MSG.option).execute()
-        assert(pingRespWithString == PING_TEST_MSG)
+        check(pingRespWithString == PING_TEST_MSG)
         var nameResp = await connection.clientGetName().execute()
-        assert(nameResp.isSome != true)
+        check(nameResp.isSome != true)
         var boolRepl: bool = await connection.clientSetName(TEST_USER_NAME).execute()
-        assert(boolRepl == true)
+        check(boolRepl == true)
         nameResp = await connection.clientGetName().execute()
-        assert(nameResp.get("") == TEST_USER_NAME)
+        check(nameResp.get("") == TEST_USER_NAME)
         let clResponse: seq[ClientInfo] = await connection.clientList().execute()
-        assert(clResponse[0].cmd == "client")
-        assert(clResponse.len == 1)
+        check(clResponse[0].cmd == "client")
+        check(clResponse.len == 1)
         let ciResponse: ClientInfo = await connection.clientInfo().execute()
-        assert(ciResponse.cmd == "client")
+        check(ciResponse.cmd == "client")
         let redirResponse = await connection.clientGetRedir().execute()
-        assert(redirResponse == -1)
-        assert(clResponse[0].redir == redirResponse)
-        assert(ciResponse.redir == redirResponse)
+        check(redirResponse == -1)
+        check(clResponse[0].redir == redirResponse)
+        check(ciResponse.redir == redirResponse)
         let idResponse = await connection.clientID().execute()
-        assert(idResponse == clResponse[0].id)
-        assert(idResponse == ciResponse.id)
+        check(idResponse == clResponse[0].id)
+        check(idResponse == ciResponse.id)
         connection.release()
       except RedisConnectionError:
         echo "Can't connect to Redis instance"
@@ -60,6 +57,7 @@ suite "Redis commands":
   test "Strings commands":
     const KEY1 = "KEY1"
     const KEY2 = "KEY2"
+    const KEY3 = "KEY3"
     const TEST_STRING = "Test String"
     const TEST_STRING_1 = "New Test String"
     proc testStrings() {.async.} =
@@ -68,14 +66,22 @@ suite "Redis commands":
         var connection = await pool.acquire(5000)
         var boolRepl: bool
         var strRepl: string
+        var optStrRepl: Option[string]
         var intRepl: int64
+        var floatRepl: float
         # SET key value [EX seconds|PX milliseconds|EXAT timestamp|PXAT milliseconds-timestamp|KEEPTTL] [NX|XX] [GET]
         boolRepl = await connection.set(KEY1, TEST_STRING).execute()
-        assert(boolRepl == true)
+        check(boolRepl == true)
         boolRepl = await connection.set(KEY1, TEST_STRING_1).nx().execute()
-        assert(boolRepl == false)
+        check(boolRepl == false)
         boolRepl = await connection.set(KEY2, TEST_STRING).nx().execute()
-        assert(boolRepl == true)
+        check(boolRepl == true)
+        boolRepl = await connection.set(KEY2, TEST_STRING_1).xx().execute()
+        check(boolRepl == true)
+        boolRepl = await connection.set(KEY3, TEST_STRING).xx().execute()
+        check(boolRepl == false)
+        optStrRepl = await connection.set(KEY2, TEST_STRING).get().execute()
+        check(optStrRepl.get("") == TEST_STRING_1)
         connection.release()
       except RedisConnectionError:
         echo "Can't connect to Redis instance"
