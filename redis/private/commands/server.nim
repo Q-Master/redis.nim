@@ -64,13 +64,13 @@ import ./cmd
 
 type
   RedisFlushOption* = enum
-    REDIS_SET_NONE
-    REDIS_SET_ASYNC = "ASYNC"
-    REDIS_SET_SYNC = "SYNC"
+    REDIS_FLUSH_NONE
+    REDIS_FLUSH_ASYNC = "ASYNC"
+    REDIS_FLUSH_SYNC = "SYNC"
 
 # FLUSHALL [ASYNC|SYNC] 
-proc flushAll*(redis: Redis, flushType: RedisFlushOption = REDIS_SET_NONE): RedisRequestT[RedisStrBool] =
+proc flushAll*(redis: Redis, flushType: RedisFlushOption = REDIS_FLUSH_NONE): RedisRequestT[RedisStrBool] =
   result = newRedisRequest[RedisRequestT[RedisStrBool]](redis)
   result.addCmd("FLUSHALL")
-  if flushType != REDIS_SET_NONE:
+  if flushType != REDIS_FLUSH_NONE:
     result.add($flushType)
