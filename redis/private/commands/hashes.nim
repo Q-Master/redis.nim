@@ -39,8 +39,8 @@ proc hGet*(redis: Redis, key, field: string): RedisRequestT[Option[string]] =
   result.addCmd("HGET", key, field)
 
 # HGETALL key 
-proc hGetAll*(redis: Redis, key: string): RedisArrayRequest[Table[string, string]] =
-  result = newRedisRequest[RedisArrayRequest[Table[string, string]]](redis)
+proc hGetAll*(redis: Redis, key: string): RedisArrayRequestT[Table[string, string]] =
+  result = newRedisRequest[RedisArrayRequestT[Table[string, string]]](redis)
   result.addCmd("HGETALL", key)
 
 proc fromRedisReq*(_: type[Table[string, string]], req: RedisMessage): Table[string, string] =
@@ -59,8 +59,8 @@ proc hIncrBy*(redis: Redis, key, field: string, increment: SomeFloat): RedisRequ
   result.addCmd("HINCRBYFLOAT", key, field, increment.float)
 
 # HKEYS key 
-proc hKeys*(redis: Redis, key: string): RedisArrayRequest[string] =
-  result = newRedisRequest[RedisArrayRequest[string]](redis)
+proc hKeys*(redis: Redis, key: string): RedisArrayRequestT[string] =
+  result = newRedisRequest[RedisArrayRequestT[string]](redis)
   result.addCmd("HKEYS", key)
 
 # HLEN key 
@@ -69,8 +69,8 @@ proc hLen*(redis: Redis, key: string): RedisRequestT[int64] =
   result.addCmd("HLEN", key)
 
 # HMGET key field [field ...] 
-proc hmGet*(redis: Redis, key, field: string, fields: varargs[RedisMessage, encodeRedis]): RedisArrayRequest[Option[string]] =
-  result = newRedisRequest[RedisArrayRequest[Option[string]]](redis)
+proc hmGet*(redis: Redis, key, field: string, fields: varargs[RedisMessage, encodeRedis]): RedisArrayRequestT[Option[string]] =
+  result = newRedisRequest[RedisArrayRequestT[Option[string]]](redis)
   result.addCmd("HMGET", key, field)
   if fields.len > 0:
     result.add(data = fields)
@@ -87,12 +87,12 @@ proc hRandField*(redis: Redis, key: string): RedisRequestT[Option[string]] =
   result = newRedisRequest[RedisRequestT[Option[string]]](redis)
   result.addCmd("HRANDFIELD", key)
 
-proc hRandField*(redis: Redis, key: string, count: SomeInteger): RedisArrayRequest[Option[string]] =
-  result = newRedisRequest[RedisArrayRequest[Option[string]]](redis)
+proc hRandField*(redis: Redis, key: string, count: SomeInteger): RedisArrayRequestT[Option[string]] =
+  result = newRedisRequest[RedisArrayRequestT[Option[string]]](redis)
   result.addCmd("HRANDFIELD", key, count.int64)
 
-proc hRandFieldWithValues*(redis: Redis, key: string, count: SomeInteger): RedisArrayRequest[Table[string, string]] =
-  result = newRedisRequest[RedisArrayRequest[Table[string, string]]](redis)
+proc hRandFieldWithValues*(redis: Redis, key: string, count: SomeInteger): RedisArrayRequestT[Table[string, string]] =
+  result = newRedisRequest[RedisArrayRequestT[Table[string, string]]](redis)
   result.addCmd("HRANDFIELD", key, count.int64, "WITHVALUES")
 
 # HSCAN key cursor [MATCH pattern] [COUNT count] 
@@ -129,6 +129,6 @@ proc hStrLen*(redis: Redis, key, field: string): RedisRequestT[int64] =
   result.addCmd("HSTRLEN", key, field)
 
 # HVALS key 
-proc hVals*(redis: Redis, key: string): RedisArrayRequest[string] =
-  result = newRedisRequest[RedisArrayRequest[string]](redis)
+proc hVals*(redis: Redis, key: string): RedisArrayRequestT[string] =
+  result = newRedisRequest[RedisArrayRequestT[string]](redis)
   result.addCmd("HVALS", key)

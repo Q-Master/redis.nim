@@ -74,7 +74,7 @@ proc decr*(redis: Redis, key: string): RedisRequestT[int64] =
 # DECRBY key decrement 
 proc decrBy*(redis: Redis, key: string, num: int64): RedisRequestT[int64] =
   result = newRedisRequest[RedisRequestT[int64]](redis)
-  result.addCmd("DECRBY", key, num)
+  result.addCmd("DECRBY", key, $num)
 
 # GET key
 proc get*(redis: Redis, key: string): RedisRequestT[Option[string]] =
@@ -170,8 +170,8 @@ proc incrBy*(redis: Redis, key: string, num: float): RedisRequestT[float] =
   result.addCmd("INCRBYFLOAT", key, num)
 
 # MGET key [key ...] 
-proc mGet*(redis: Redis, key: string, keys: varargs[RedisMessage, encodeRedis]): RedisArrayRequest[Option[string]] =
-  result = newRedisRequest[RedisArrayRequest[Option[string]]](redis)
+proc mGet*(redis: Redis, key: string, keys: varargs[RedisMessage, encodeRedis]): RedisArrayRequestT[Option[string]] =
+  result = newRedisRequest[RedisArrayRequestT[Option[string]]](redis)
   result.addCmd("MGET", key)
   if keys.len > 0:
     result.add(data = keys)

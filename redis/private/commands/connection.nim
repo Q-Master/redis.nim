@@ -127,8 +127,8 @@ proc fromRedisReq*(_: type[seq[ClientInfo]], req: RedisMessage): seq[ClientInfo]
   for s in str.split('\n'):
     result.add(s.parseClientInfo())
 
-proc clientList*(redis: Redis, clientType: ClientType = CLIENT_TYPE_ALL, clientIDs: seq[int64] = @[]): RedisArrayRequest[ClientInfo] =
-  result = newRedisRequest[RedisArrayRequest[ClientInfo]](redis)
+proc clientList*(redis: Redis, clientType: ClientType = CLIENT_TYPE_ALL, clientIDs: seq[int64] = @[]): RedisArrayRequestT[ClientInfo] =
+  result = newRedisRequest[RedisArrayRequestT[ClientInfo]](redis)
   result.addCmd("CLIENT LIST")
   if clientType != CLIENT_TYPE_ALL:
     result.add("TYPE", $clientType)

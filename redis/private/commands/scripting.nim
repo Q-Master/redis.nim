@@ -37,8 +37,8 @@ proc eval*[T](redis: Redis, sha1: SecureHash, ro: bool = false, keyArgs: varargs
       result.add(ka.b)
 
 # SCRIPT EXISTS sha1 [sha1 ...] 
-proc scriptExists*(redis: Redis, sha1: SecureHash, sha1s: varargs[SecureHash]): RedisArrayRequest[RedisIntBool] =
-  result = newRedisRequest[RedisArrayRequest[RedisIntBool]](redis)
+proc scriptExists*(redis: Redis, sha1: SecureHash, sha1s: varargs[SecureHash]): RedisArrayRequestT[RedisIntBool] =
+  result = newRedisRequest[RedisArrayRequestT[RedisIntBool]](redis)
   result.addCmd("SCRIPT EXISTS", sha1)
   for sha in sha1s:
     result.add(sha)

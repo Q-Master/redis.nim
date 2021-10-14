@@ -34,8 +34,8 @@ proc sCard*(redis: Redis, key: string): RedisRequestT[int64] =
   result.addCmd("SCARD", key)
 
 # SDIFF key [key ...]
-proc sDiff*(redis: Redis, key: string, keys: varargs[RedisMessage, encodeRedis]): RedisArrayRequest[string] =
-  result = newRedisRequest[RedisArrayRequest[string]](redis)
+proc sDiff*(redis: Redis, key: string, keys: varargs[RedisMessage, encodeRedis]): RedisArrayRequestT[string] =
+  result = newRedisRequest[RedisArrayRequestT[string]](redis)
   result.addCmd("SDIFF", key)
   result.add(data = keys)
 
@@ -46,8 +46,8 @@ proc sDiffStore*(redis: Redis, destKey, key: string, keys: varargs[RedisMessage,
   result.add(data = keys)
 
 # SINTER key [key ...] 
-proc sInter*(redis: Redis, key: string, keys: varargs[RedisMessage, encodeRedis]): RedisArrayRequest[string] =
-  result = newRedisRequest[RedisArrayRequest[string]](redis)
+proc sInter*(redis: Redis, key: string, keys: varargs[RedisMessage, encodeRedis]): RedisArrayRequestT[string] =
+  result = newRedisRequest[RedisArrayRequestT[string]](redis)
   result.addCmd("SINTER", key)
   result.add(data = keys)
 
@@ -69,13 +69,13 @@ proc sIsMember*(redis: Redis, key, member: string): RedisRequestT[RedisIntBool] 
   result.addCmd("SISMEMBER", key, member)
 
 # SMEMBERS key 
-proc sMembers*(redis: Redis, key: string): RedisArrayRequest[string] =
-  result = newRedisRequest[RedisArrayRequest[string]](redis)
+proc sMembers*(redis: Redis, key: string): RedisArrayRequestT[string] =
+  result = newRedisRequest[RedisArrayRequestT[string]](redis)
   result.addCmd("SMEMBERS", key)
 
 # SMISMEMBER key member [member ...] 
-proc smIsMember*(redis: Redis, key, member: string, members: varargs[RedisMessage, encodeRedis]): RedisArrayRequest[RedisIntBool] =
-  result = newRedisRequest[RedisArrayRequest[RedisIntBool]](redis)
+proc smIsMember*(redis: Redis, key, member: string, members: varargs[RedisMessage, encodeRedis]): RedisArrayRequestT[RedisIntBool] =
+  result = newRedisRequest[RedisArrayRequestT[RedisIntBool]](redis)
   result.addCmd("SMISMEMBER", key, member)
   result.add(data = members)
 
@@ -89,8 +89,8 @@ proc sPop*(redis: Redis, key: string): RedisRequestT[Option[string]] =
   result = newRedisRequest[RedisRequestT[Option[string]]](redis)
   result.addCmd("SPOP", key)
 
-proc sPop*(redis: Redis, key: string, count: SomeInteger): RedisArrayRequest[string] =
-  result = newRedisRequest[RedisArrayRequest[string]](redis)
+proc sPop*(redis: Redis, key: string, count: SomeInteger): RedisArrayRequestT[string] =
+  result = newRedisRequest[RedisArrayRequestT[string]](redis)
   result.addCmd("SPOP", key, count.int64)
 
 # SRANDMEMBER key [count] 
@@ -98,8 +98,8 @@ proc sRandMember*(redis: Redis, key: string): RedisRequestT[Option[string]] =
   result = newRedisRequest[RedisRequestT[Option[string]]](redis)
   result.addCmd("SRANDMEMBER", key)
 
-proc sRandMember*(redis: Redis, key: string, count: SomeInteger): RedisArrayRequest[string] =
-  result = newRedisRequest[RedisArrayRequest[string]](redis)
+proc sRandMember*(redis: Redis, key: string, count: SomeInteger): RedisArrayRequestT[string] =
+  result = newRedisRequest[RedisArrayRequestT[string]](redis)
   result.addCmd("SRANDMEMBER", key, count.int64)
 
 # SREM key member [member ...] 
@@ -118,8 +118,8 @@ proc sScan*(redis: Redis, match: Option[string] = string.none, count: int = -1):
     result.add("COUNT", count)
 
 # SUNION key [key ...] 
-proc sUnion*(redis: Redis, key: string, keys: varargs[RedisMessage, encodeRedis]): RedisArrayRequest[string] =
-  result = newRedisRequest[RedisArrayRequest[string]](redis)
+proc sUnion*(redis: Redis, key: string, keys: varargs[RedisMessage, encodeRedis]): RedisArrayRequestT[string] =
+  result = newRedisRequest[RedisArrayRequestT[string]](redis)
   result.addCmd("SUNION", key)
   result.add(data = keys)
 

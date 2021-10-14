@@ -85,8 +85,8 @@ proc expireTime*(redis: Redis, key: string): RedisRequestT[Time] =
   result.addCmd("EXPIRETIME", key)
 
 # KEYS pattern 
-proc keys*(redis: Redis, pattern: string): RedisArrayRequest[string] =
-  result = newRedisRequest[RedisArrayRequest[string]](redis)
+proc keys*(redis: Redis, pattern: string): RedisArrayRequestT[string] =
+  result = newRedisRequest[RedisArrayRequestT[string]](redis)
   result.addCmd("KEYS", pattern)
 
 # MOVE key db 
@@ -166,8 +166,8 @@ proc sort*(
   by: Option[string] = string.none, 
   limit: Option[Slice[int]] = Slice[int].none, 
   gets: seq[string] = @[], 
-  sortOrder: RedisSortOrder = REDIS_SORT_ASC, alpha = false): RedisArrayRequest[string] =
-  result = newRedisRequest[RedisArrayRequest[string]](redis)
+  sortOrder: RedisSortOrder = REDIS_SORT_ASC, alpha = false): RedisArrayRequestT[string] =
+  result = newRedisRequest[RedisArrayRequestT[string]](redis)
   result.realSort(key, string.none, by, limit, gets, sortOrder, alpha)
 
 proc sortStore*(redis: Redis, key: string, storeKey: string,
