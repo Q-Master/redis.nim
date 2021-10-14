@@ -4,25 +4,25 @@ import ../exceptions
 
 #[
   Block of strings commands
-    *APPEND
-    *DECR
-    *DECRBY
-    *GET
-    *GETDEL
-    *GETEX
-    *GETRANGE
-    *GETSET
-    *INCR
-    *INCRBY
-    *INCRBYFLOAT
-    *MGET
-    *MSET
-    *MSETNX
-    *PSETEX
-    *SET
-    *SETEX
-    *SETNX
-    *SETRANGE
+    APPEND
+    DECR
+    DECRBY
+    GET
+    GETDEL
+    GETEX
+    GETRANGE
+    GETSET
+    INCR
+    INCRBY
+    INCRBYFLOAT
+    MGET
+    MSET
+    MSETNX
+    PSETEX
+    SET
+    SETEX
+    SETNX
+    SETRANGE
     STRALGO
     STRLEN
 ]#
@@ -61,12 +61,12 @@ proc newRedisSetRequest(redis: Redis): RedisSetRequest =
   result.nx = false
   result.xx = false
 
-# APPEND key value 
+# APPEND key value
 proc append*(redis: Redis, key, data: string): RedisRequestT[int64] =
   result = newRedisRequest[RedisRequestT[int64]](redis)
   result.addCmd("APPEND", key, data)
 
-# DECR key  
+# DECR key
 proc decr*(redis: Redis, key: string): RedisRequestT[int64] =
   result = newRedisRequest[RedisRequestT[int64]](redis)
   result.addCmd("DECR", key)
@@ -219,9 +219,10 @@ proc pSetEx*[T: Time | DateTime | Duration](redis: Redis, key: string, value: st
     result.add(timeout.inMilliseconds, value)
 
 # SET key value [EX seconds|PX milliseconds|EXAT timestamp|PXAT milliseconds-timestamp|KEEPTTL] [NX|XX] [GET]
-proc set*(redis: Redis, key, value: string): RedisSetRequest =
+proc set*[T](redis: Redis, key: string, value: T): RedisSetRequest =
+  let val = $value
   result = newRedisSetRequest(redis)
-  result.addCmd("SET", key, value)
+  result.addCmd("SET", key, val)
 
 proc ex*(req: RedisSetRequest, t: Duration): RedisSetRequest =
   result = req

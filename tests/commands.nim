@@ -58,6 +58,7 @@ suite "Redis commands":
     const KEY1 = "KEY1"
     const KEY2 = "KEY2"
     const KEY3 = "KEY3"
+    const KEY4 = "KEY4"
     const TEST_STRING = "Test String"
     const TEST_STRING_1 = "New Test String"
     proc testStrings() {.async.} =
@@ -82,7 +83,32 @@ suite "Redis commands":
         check(boolRepl == false)
         optStrRepl = await connection.set(KEY2, TEST_STRING).get().execute()
         check(optStrRepl.get("") == TEST_STRING_1)
+        # GET key
+        optStrRepl = await connection.get(KEY1).execute()
+        check(optStrRepl == TEST_STRING.option)
+        optStrRepl = await connection.get(KEY4).execute()
+        check(optStrRepl.isSome == false)
+        # APPEND key value
+        intRepl = await connection.append(KEY1, " 1").execute()
+        check(intRepl == TEST_STRING.len + 2)
+        optStrRepl = await connection.get(KEY1).execute()
+        check(optStrRepl == (TEST_STRING & " 1").option)
+        # DECR key
+        boolRepl = await connection.set(KEY1, 5).execute()
+        intRepl = await connection.decr(KEY1).execute()
+        check(intRepl == 4)
+        # DECRBY key decrement 
+        boolRepl = await connection.set(KEY1, 5).execute()
+        intRepl = await connection.decrBy(KEY1, 4).execute()
+        check(intRepl == 1)
         connection.release()
+        # GETDEL key
+        optStrRepl = await connection.getDel(KEY1).execute()
+        check(optStrRepl == "1".option)
+        optStrRepl = await connection.getDel(KEY1).execute()
+        check(optStrRepl.isSome == false)
+        # GETRANGE key start end 
+
       except RedisConnectionError:
         echo "Can't connect to Redis instance"
         fail()
