@@ -107,8 +107,14 @@ suite "Redis commands":
         check(optStrRepl == "1".option)
         optStrRepl = await connection.getDel(KEY1)
         check(optStrRepl.isSome == false)
-        # GETRANGE key start end 
-
+        # GETRANGE key start end
+        boolRepl = await connection.set(KEY1, TEST_STRING)
+        optStrRepl = await connection.getRange(KEY1, (1 .. 3))
+        check(optStrRepl == "est".option)
+        # GETSET key value
+        boolRepl = await connection.set(KEY1, TEST_STRING)
+        optStrRepl = await connection.getSet(KEY1, TEST_STRING_1)
+        check(optStrRepl == TEST_STRING.option)
       except RedisConnectionError:
         echo "Can't connect to Redis instance"
         fail()

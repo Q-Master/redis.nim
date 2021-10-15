@@ -1,3 +1,4 @@
+{. warning[UnusedImport]:off .}
 import private/[connection, exceptions, proto]
 import private/commands/[cmd]
 import private/commands/connection as conneciton_cmds

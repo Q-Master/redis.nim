@@ -51,6 +51,8 @@ proc raiseException*(error: string) =
       raise newException(RedisModuleError, errorString)
     elif errorString == MODULE_EXPORTS_DATA_TYPES_ERROR:
       raise newException(RedisModuleError, errorString)
+    else:
+      raise newException(RedisProtocolError, errorString)
   elif errCode == "EXECABORT":
     raise newException(RedisExecAbortError, errorString)
   elif errCode == "LOADING":

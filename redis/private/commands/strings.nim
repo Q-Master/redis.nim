@@ -147,7 +147,7 @@ proc persist*(req: RedisGetExRequest): RedisGetExRequest =
 # GETRANGE key start end 
 proc getRange*(redis: Redis, key: string, ranges: Slice[int]): RedisRequestT[Option[string]] =
   result = newRedisRequest[RedisRequestT[Option[string]]](redis)
-  result.addCmd("GETRANGE", key, ranges.a, ranges.b)
+  result.addCmd("GETRANGE", key, $ranges.a, $ranges.b)
 
 # GETSET key value
 proc getSet*(redis: Redis, key, value: string): RedisRequestT[Option[string]] =
@@ -162,12 +162,12 @@ proc incr*(redis: Redis, key: string): RedisRequestT[int64] =
 # INCRBY key increment
 proc incrBy*(redis: Redis, key: string, num: int64): RedisRequestT[int64] =
   result = newRedisRequest[RedisRequestT[int64]](redis)
-  result.addCmd("INCRBY", key, num)
+  result.addCmd("INCRBY", key, $num)
 
 # INCRBYFLOAT key increment
 proc incrBy*(redis: Redis, key: string, num: float): RedisRequestT[float] =
   result = newRedisRequest[RedisRequestT[float]](redis)
-  result.addCmd("INCRBYFLOAT", key, num)
+  result.addCmd("INCRBYFLOAT", key, $num)
 
 # MGET key [key ...] 
 proc mGet*(redis: Redis, key: string, keys: varargs[RedisMessage, encodeRedis]): RedisArrayRequestT[Option[string]] =
