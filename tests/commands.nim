@@ -115,6 +115,16 @@ suite "Redis commands":
         boolRepl = await connection.set(KEY1, TEST_STRING)
         optStrRepl = await connection.getSet(KEY1, TEST_STRING_1)
         check(optStrRepl == TEST_STRING.option)
+        # INCR key
+        boolRepl = await connection.set(KEY1, 5)
+        intRepl = await connection.incr(KEY1)
+        check(intRepl == 6)
+        # INCRBY key increment
+        intRepl = await connection.incrBy(KEY1, 4)
+        check(intRepl == 10)
+        # INCRBYFLOAT key increment
+        floatRepl = await connection.incrBy(KEY1, 1.5)
+        check(floatRepl == 11.5)
       except RedisConnectionError:
         echo "Can't connect to Redis instance"
         fail()

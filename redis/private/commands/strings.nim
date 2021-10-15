@@ -165,8 +165,8 @@ proc incrBy*(redis: Redis, key: string, num: int64): RedisRequestT[int64] =
   result.addCmd("INCRBY", key, $num)
 
 # INCRBYFLOAT key increment
-proc incrBy*(redis: Redis, key: string, num: float): RedisRequestT[float] =
-  result = newRedisRequest[RedisRequestT[float]](redis)
+proc incrBy*(redis: Redis, key: string, num: float): RedisRequestT[RedisStrFloat] =
+  result = newRedisRequest[RedisRequestT[RedisStrFloat]](redis)
   result.addCmd("INCRBYFLOAT", key, $num)
 
 # MGET key [key ...] 
