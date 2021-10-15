@@ -61,6 +61,7 @@ suite "Redis commands":
     const KEY4 = "KEY4"
     const TEST_STRING = "Test String"
     const TEST_STRING_1 = "New Test String"
+    const CHECK_STRING = "Test stringS"
     proc testStrings() {.async.} =
       var pool = newRedisPool("localhost", 6379, 0, poolsize=2)
       try:
@@ -70,6 +71,7 @@ suite "Redis commands":
         var optStrRepl: Option[string]
         var intRepl: int64
         var floatRepl: float
+        var optStrReplArray: seq[Option[string]]
         # SET key value [EX seconds|PX milliseconds|EXAT timestamp|PXAT milliseconds-timestamp|KEEPTTL] [NX|XX] [GET]
         boolRepl = await connection.set(KEY1, TEST_STRING)
         check(boolRepl == true)
@@ -125,6 +127,46 @@ suite "Redis commands":
         # INCRBYFLOAT key increment
         floatRepl = await connection.incrBy(KEY1, 1.5)
         check(floatRepl == 11.5)
+        # MGET key [key ...]
+        boolRepl = await connection.set(KEY1, TEST_STRING)
+        boolRepl = await connection.set(KEY2, TEST_STRING_1)
+        optStrReplArray = await connection.mGet(KEY1, KEY2, KEY3)
+        check(optStrReplArray.len == 3)
+        check(optStrReplArray[0] == TEST_STRING.option)
+        check(optStrReplArray[1] == TEST_STRING_1.option)
+        check(optStrReplArray[2].isNone)
+        # MSET key value [key value ...] 
+        boolRepl = await connection.mSet((KEY1, TEST_STRING_1), (KEY2, TEST_STRING))
+        optStrRepl = await connection.getDel(KEY1)
+        check(optStrRepl == TEST_STRING_1.option)
+        optStrRepl = await connection.getDel(KEY2)
+        check(optStrRepl == TEST_STRING.option)
+        # MSETNX key value [key value ...]
+        boolRepl = await connection.mSetNX((KEY1, TEST_STRING), (KEY2, TEST_STRING_1))
+        check(boolRepl == true)
+        optStrRepl = await connection.get(KEY1)
+        check(optStrRepl == TEST_STRING.option)
+        optStrRepl = await connection.getDel(KEY2)
+        check(optStrRepl == TEST_STRING_1.option)
+        boolRepl = await connection.mSetNX((KEY1, TEST_STRING_1), (KEY2, TEST_STRING))
+        check(boolRepl == false)
+        optStrRepl = await connection.get(KEY1)
+        check(optStrRepl == TEST_STRING.option)
+        optStrRepl = await connection.get(KEY2)
+        check(optStrRepl.isNone)
+        # SETNX key value
+        boolRepl = await connection.setNX(KEY1, TEST_STRING_1)
+        check(boolRepl == false)
+        boolRepl = await connection.setNX(KEY2, TEST_STRING_1)
+        check(boolRepl == true)
+        # SETRANGE key offset value 
+        intRepl = await connection.setRange(KEY1, "stringS", 5)
+        check(intRepl == CHECK_STRING.len)
+        optStrRepl = await connection.get(KEY1)
+        check(optStrRepl == CHECK_STRING.option)
+        # STRLEN key
+        intRepl = await connection.strLen(KEY1)
+        check(intRepl == CHECK_STRING.len)
       except RedisConnectionError:
         echo "Can't connect to Redis instance"
         fail()

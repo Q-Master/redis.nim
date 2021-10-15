@@ -300,14 +300,14 @@ proc execute*(req: RedisSetGetRequest): Future[Option[string]] {.async.} =
   result = res.str
 
 # SETNX key value 
-proc setNx*[T](redis: Redis, key: string, value: T): RedisRequestT[RedisIntBool] =
+proc setNX*[T](redis: Redis, key: string, value: T): RedisRequestT[RedisIntBool] =
   result = newRedisRequest[RedisRequestT[RedisIntBool]](redis)
   result.addCmd("SETNX", key, value)
 
 # SETRANGE key offset value 
 proc setRange*(redis: Redis, key, value: string, offset: int64): RedisRequestT[int64] =
   result = newRedisRequest[RedisRequestT[int64]](redis)
-  result.addCmd("SETRANGE", key, offset, value)
+  result.addCmd("SETRANGE", key, $offset, value)
 
 # STRLEN key
 proc strLen*(redis: Redis, key: string): RedisRequestT[int64] =
