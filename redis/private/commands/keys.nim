@@ -48,14 +48,9 @@ proc del*(redis: Redis, key: string, keys: varargs[RedisMessage, encodeRedis]): 
   if keys.len() > 0:
     result.add(data = keys)
 
-# DUMP key 
-proc dump*(redis: Redis, key: string): RedisRequestT[Option[string]] =
-  result = newRedisRequest[RedisRequestT[Option[string]]](redis)
-  result.addCmd("DUMP", key)
-
 # EXISTS key [key ...] 
-proc exists*(redis: Redis, key: string, keys: varargs[RedisMessage, encodeRedis]): RedisRequestT[RedisIntBool] =
-  result = newRedisRequest[RedisRequestT[RedisIntBool]](redis)
+proc exists*(redis: Redis, key: string, keys: varargs[RedisMessage, encodeRedis]): RedisRequestT[int64] =
+  result = newRedisRequest[RedisRequestT[int64]](redis)
   result.addCmd("EXISTS", key)
   if keys.len() > 0:
     result.add(data = keys)

@@ -3,6 +3,13 @@ import std/[asyncdispatch, times, options]
 import redis/redis
 
 suite "Redis commands":
+  const KEY1 = "KEY1"
+  const KEY2 = "KEY2"
+  const KEY3 = "KEY3"
+  const KEY4 = "KEY4"
+  const TEST_STRING = "Test String"
+  const TEST_STRING_1 = "New Test String"
+    
   setup:
     proc killAll() {.async.} =
       var pool = newRedisPool("localhost", 6379, 0, poolsize=2)
@@ -55,19 +62,12 @@ suite "Redis commands":
     waitFor(testConnection())
 
   test "Strings commands":
-    const KEY1 = "KEY1"
-    const KEY2 = "KEY2"
-    const KEY3 = "KEY3"
-    const KEY4 = "KEY4"
-    const TEST_STRING = "Test String"
-    const TEST_STRING_1 = "New Test String"
     const CHECK_STRING = "Test stringS"
     proc testStrings() {.async.} =
       var pool = newRedisPool("localhost", 6379, 0, poolsize=2)
       try:
         var connection = await pool.acquire(5000)
         var boolRepl: bool
-        var strRepl: string
         var optStrRepl: Option[string]
         var intRepl: int64
         var floatRepl: float
@@ -167,28 +167,62 @@ suite "Redis commands":
         # STRLEN key
         intRepl = await connection.strLen(KEY1)
         check(intRepl == CHECK_STRING.len)
+        connection.release()
       except RedisConnectionError:
         echo "Can't connect to Redis instance"
         fail()
       await pool.close()
     waitFor(testStrings())
 
+  test "Keys commands":
+    const KEYS_PATTERN = "KEY[1-5]"
+    proc testKeys() {.async.} =
+      var pool = newRedisPool("localhost", 6379, 0, poolsize=2)
+      try:
+        var connection = await pool.acquire(5000)
+        var boolRepl: bool
+        var optStrRepl: Option[string]
+        var intRepl: int64
+        var floatRepl: float
+        var strReplArray: seq[string]
+        # DEL key [key ...] 
+        boolRepl = await connection.set(KEY1, TEST_STRING)
+        boolRepl = await connection.set(KEY2, TEST_STRING)
+        intRepl = await connection.del(KEY1, KEY2, KEY3)
+        check(intRepl == 2)
+        # EXISTS key [key ...] 
+        boolRepl = await connection.set(KEY1, TEST_STRING)
+        boolRepl = await connection.set(KEY2, TEST_STRING)
+        intRepl = await connection.exists(KEY1, KEY2, KEY3)
+        check(intRepl == 2)
+        # KEYS pattern 
+        strReplArray = await connection.keys(KEYS_PATTERN)
+        check(strReplArray.len == 2)
+        check(strReplArray[0] == KEY1)
+        check(strReplArray[1] == KEY2)
+        # RANDOMKEY
+        optStrRepl = await connection.randomKey()
+        check(optStrRepl.isSome)
+        # RENAME key newkey 
+        boolRepl = await connection.rename(KEY1, KEY4)
+        check(boolRepl == true)
+        intRepl = await connection.exists(KEY1, KEY4)
+        check(intRepl == 1)
+        optStrRepl = await connection.get(KEY4)
+        check(optStrRepl.isSome)
+        check(optStrRepl == TEST_STRING.option)
+        # RENAMENX key newkey 
+        boolRepl = await connection.renameNX(KEY4, KEY1)
+        check(boolRepl == true)
+        boolRepl = await connection.renameNX(KEY1, KEY2)
+        check(boolRepl == false)
+        connection.release()
+      except RedisConnectionError:
+        echo "Can't connect to Redis instance"
+        fail()
+      await pool.close()
+    waitFor(testKeys())
 #[
-
-        var replSize = await connection.append("KEY1", "Test")
-        assert(replSize == 4)
-        replSize = await connection.decr("KEY2")
-        assert(replSize == 9)
-        replSize = await connection.decrBy("KEY2", 2)
-        assert(replSize == 7)
-        var replGet = await connection.get("KEY1")
-        assert(replGet.get() == "Test")
-        replGet = await connection.get("NONEXISTING")
-        assert(replGet.isNone())
-        replGet = await connection.getDel("KEY1")
-        assert(replGet.get() == "Test")
-        replGet = await connection.get("KEY1")
-        assert(replGet.isNone())
         let expTime = now()+2.seconds+500.milliseconds
         replGet = await connection.getEx("KEY1").ex(initDuration(seconds=60)).execute()
         replGet = await connection.getEx("KEY1").exAt(expTime.toTime()).execute()
@@ -196,44 +230,13 @@ suite "Redis commands":
         replGet = await connection.getEx("KEY1").px(initDuration(seconds=60)).execute()
         replGet = await connection.getEx("KEY1").pxAt(expTime.toTime()).execute
         replGet = await connection.getEx("KEY1").pxAt(expTime).execute()
-        replGet = await connection.getRange("KEY1", 0 .. 1)
-        assert(replGet.get() == "Te")
-        replGet = await connection.getSet("KEY1", "New Test")
-        assert(replGet.get() == "Test")
-        replGet = await connection.get("KEY1")
-        assert(replGet.get() == "New Test")
-        replSize = await connection.incr("KEY2")
-        assert(replSize == 8)
-        replSize = await connection.incrBy("KEY2", 2)
-        assert(replSize == 10)
-        var replSizeFloat = await connection.incrBy("KEY2", 2.5)
-        assert(replSizeFloat == 12.5)
-        let mgetRepl: seq[Option[string]] = await connection.mget("KEY1", "NONEXISTENT")
-        assert(mgetRepl[0].get() == "New Test")
-        assert(mgetRepl[1].isNone())
-        var msetRepl = await connection.mset({"KEY1": "Test"}, {"KEY2": 1})
-        assert(msetRepl == true)
-        msetRepl = await connection.msetNx({"KEY1": "Test"}, {"KEY2": 1})
-        assert(msetRepl == true)
-        msetRepl = await connection.msetNx({"KEY1": "Test"}, {"NONEXISTENT": "Error"})
-        assert(msetRepl == false)
         msetRepl = await connection.setEx("KEY1", initDuration(seconds = 60), "Test")
         msetRepl = await connection.setEx("KEY1", expTime.toTime(), "Test")
         msetRepl = await connection.setEx("KEY1", expTime, "Test")
         msetRepl = await connection.psetEx("KEY1", initDuration(seconds = 60), "Test")
         msetRepl = await connection.psetEx("KEY1", expTime.toTime(), "Test")
         msetRepl = await connection.psetEx("KEY1", expTime, "Test")
-        assert(msetRepl == true)
-        msetRepl = await connection.setVal("KEY1", "Test").execute()
-        assert(msetRepl == true)
-        replGet = await connection.setVal("KEY1", "Test1").get().execute()
-        assert(replGet.get() == "Test")
-        msetRepl = await connection.setNx("KEY1", "TEST")
-        assert(msetRepl == false)
-        replSize = await connection.setRange("KEY1", "2", 4)
-        assert(replSize == 5)
-        replSize = await connection.strLen("KEY1")
-        assert(replSize == 5)
+
   test "Keys commands":
     proc testKeys() {.async} =
       var pool = newRedisPool("localhost", 6379, 0, poolsize=2)
