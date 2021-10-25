@@ -7,6 +7,7 @@ suite "Redis commands":
   const KEY2 = "KEY2"
   const KEY3 = "KEY3"
   const KEY4 = "KEY4"
+  const KEY_NONEXISTING = "NONEXISTING"
   const TEST_STRING = "Test String"
   const TEST_STRING_1 = "New Test String"
     
@@ -217,6 +218,14 @@ suite "Redis commands":
         boolRepl = await connection.renameNX(KEY1, KEY2)
         check(boolRepl == false)
         connection.release()
+        # TOUCH key [key ...]
+        boolRepl = await connection.mSet((KEY1, TEST_STRING), (KEY2, TEST_STRING), (KEY3, TEST_STRING))
+        intRepl = await connection.touch(KEY1, KEY2, KEY3, KEY_NONEXISTING)
+        check(intRepl == 3)
+        # UNLINK key [key ...]
+        boolRepl = await connection.mSet((KEY1, TEST_STRING), (KEY2, TEST_STRING), (KEY3, TEST_STRING), (KEY4, TEST_STRING))
+        intRepl = await connection.unlink(KEY1, KEY2, KEY3, KEY4, KEY_NONEXISTING)
+        check(intRepl == 4)
       except RedisConnectionError:
         echo "Can't connect to Redis instance"
         fail()

@@ -4,27 +4,27 @@ import ../exceptions
 
 #[
   Block of strings commands
-    APPEND
-    DECR
-    DECRBY
-    GET
-    GETDEL
+    *APPEND
+    *DECR
+    *DECRBY
+    *GET
+    *GETDEL
     GETEX
-    GETRANGE
-    GETSET
-    INCR
-    INCRBY
-    INCRBYFLOAT
-    MGET
-    MSET
+    *GETRANGE
+    *GETSET
+    *INCR
+    *INCRBY
+    *INCRBYFLOAT
+    *MGET
+    *MSET
     MSETNX
     PSETEX
-    SET
+    *SET
     SETEX
-    SETNX
-    SETRANGE
+    *SETNX
+    *SETRANGE
     STRALGO
-    STRLEN
+    *STRLEN
 ]#
 type
   RedisSetOption* = enum

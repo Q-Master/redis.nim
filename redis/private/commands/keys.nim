@@ -1,36 +1,58 @@
-import std/[times, options]
+import std/[times, options, asyncdispatch]
 import ./cmd
 
 #[
   Block of keys commands
-    *COPY
+    COPY
     *DEL
-    *DUMP
     *EXISTS
-    *EXPIRE
-    *EXPIREAT
-    *EXPIRETIME
+    EXPIRE
+    EXPIREAT
+    EXPIRETIME
     *KEYS
-    MIGRATE
-    *MOVE
-    OBJECT
-    *PERSIST
-    *PEXPIRE
-    *PEXPIREAT
-    *PEXPIRETIME
-    *PTTL
+    MOVE
+    PERSIST
+    PEXPIRE
+    PEXPIREAT
+    PEXPIRETIME
+    PTTL
     *RANDOMKEY
     *RENAME
     *RENAMENX
-    RESTORE
-    *SCAN
-    *SORT
+    SCAN
+    SORT
     *TOUCH
-    *TTL
+    TTL
     TYPE
     *UNLINK
-    WAIT
 ]#
+
+type
+  RedisSortRequest* = ref RedisSortRequestObj
+  RedisSortRequestObj* = object of RedisRequestT[RedisStrBool]
+    # [BY pattern] [LIMIT offset count] [GET pattern [GET pattern ...]] [ASC|DESC] [ALPHA] [STORE destination]
+    by: Option[string]
+    limit: Option[Slice[int]]
+    gets: seq[string]
+    sortOrder: RedisSortOrder
+    alpha: bool
+  
+  RedisSortStoreRequest* = ref object of RedisSortRequest
+    store: string
+
+proc newRedisSortRequest(redis: Redis): RedisSortRequest =
+  result = newRedisRequest[RedisSortRequest](redis)
+  result.gets = @[]
+  result.sortOrder = REDIS_SORT_ASC
+  result.alpha = false
+
+proc fromRedisSortRequest(req: RedisSortRequest): RedisSortStoreRequest =
+  result = newRedisRequest[RedisSortStoreRequest](req.redis)
+  result.by = req.by
+  result.limit = req.limit
+  result.gets = req.gets
+  result.sortOrder = req.sortOrder
+  result.alpha = req.alpha
 
 # COPY source destination [DB destination-db] [REPLACE] 
 proc copy*(redis: Redis, source, destination: string, db: int = -1, replace: bool = false): RedisRequestT[RedisIntBool] =
@@ -148,30 +170,50 @@ proc scan*(redis: Redis, match: Option[string] = string.none, count: int = -1): 
     result.add("COUNT", count)
 
 # SORT key [BY pattern] [LIMIT offset count] [GET pattern [GET pattern ...]] [ASC|DESC] [ALPHA] [STORE destination]
-proc realSort(
-  req: RedisRequest, key: string, 
-  storeKey: Option[string], 
+proc realSort[T: RedisRequest](
+  req: T, 
   by: Option[string], 
   limit: Option[Slice[int]], 
   gets: seq[string], 
-  sortOrder: RedisSortOrder, alpha: bool)
+  sortOrder: RedisSortOrder, 
+  alpha: bool)
 
-proc sort*(
-  redis: Redis, key: string, 
-  by: Option[string] = string.none, 
-  limit: Option[Slice[int]] = Slice[int].none, 
-  gets: seq[string] = @[], 
-  sortOrder: RedisSortOrder = REDIS_SORT_ASC, alpha = false): RedisArrayRequestT[string] =
-  result = newRedisRequest[RedisArrayRequestT[string]](redis)
-  result.realSort(key, string.none, by, limit, gets, sortOrder, alpha)
+proc sort*(redis: Redis, key: string): RedisSortRequest =
+  result = newRedisSortRequest(redis)
+  result.addCmd("SORT", key)
 
-proc sortStore*(redis: Redis, key: string, storeKey: string,
-  by: Option[string] = string.none, 
-  limit: Option[Slice[int]] = Slice[int].none, 
-  gets: seq[string] = @[], 
-  sortOrder: RedisSortOrder = REDIS_SORT_ASC, alpha = false): RedisRequestT[int64] =
-  result = newRedisRequest[RedisRequestT[int64]](redis)
-  result.realSort(key, storeKey.option, by, limit, gets, sortOrder, alpha)
+proc by*(req: RedisSortRequest, pattern: string): RedisSortRequest =
+  result = req
+  result.by = pattern.option
+
+proc limit*(req: RedisSortRequest, limit: Slice[int]): RedisSortRequest =
+  result = req
+  result.limit = limit.option
+
+proc get*(req: RedisSortRequest, pattern: string): RedisSortRequest =
+  result = req
+  result.gets.add(pattern)
+
+proc order*(req: RedisSortRequest, order: RedisSortOrder): RedisSortRequest =
+  result = req
+  result.sortOrder = order
+
+proc alpha*(req: RedisSortRequest): RedisSortRequest =
+  result = req
+  result.alpha = true
+
+proc store*(req: RedisSortRequest, storeKey: string): RedisSortStoreRequest =
+  result = req.fromRedisSortRequest()
+  result.store = storeKey
+
+proc execute*(req: RedisSortRequest): Future[seq[string]] =
+  req.realSort(req.by, req.limit, req.gets, req.sortOrder, req.alpha)
+  result = cast[RedisArrayRequestT[string]](req).execute()
+
+proc execute*(req: RedisSortStoreRequest): Future[int64] =
+  req.realSort(req.by, req.limit, req.gets, req.sortOrder, req.alpha)
+  req.add("STORE", req.store)
+  result = cast[RedisRequestT[int64]](req).execute()
 
 # TOUCH key [key ...]
 proc touch*(redis: Redis, key: string, keys: varargs[RedisMessage, encodeRedis]): RedisRequestT[int64] =
@@ -199,15 +241,15 @@ proc unlink*(redis: Redis, key: string, keys: varargs[RedisMessage, encodeRedis]
 
 #------- pvt
 
-proc realSort(
-  req: RedisRequest, key: string, 
-  storeKey: Option[string], 
+proc realSort[T: RedisRequest](
+  req: T,
   by: Option[string], 
   limit: Option[Slice[int]], 
   gets: seq[string], 
   sortOrder: RedisSortOrder, alpha: bool) =
-  req.addCmd("SORT", key)
-  if by.isSome:
+  if sortOrder == REDIS_SORT_NONE:
+    req.add("BY", "nosort")
+  elif by.isSome:
     req.add("BY", by.get())
   if limit.isSome:
     let lmt = limit.get()
@@ -215,15 +257,7 @@ proc realSort(
   if gets.len > 0:
     for get in gets:
       req.add("GET", get)
-  case sortOrder
-  of REDIS_SORT_ASC:
-    discard
-  of REDIS_SORT_DESC:
+  if sortOrder == REDIS_SORT_DESC:
     req.add("DESC")
-  of REDIS_SORT_NONE:
-    if by.isNone:
-      req.add("BY", "nosort")
   if alpha:
     req.add("ALPHA")
-  if storeKey.isSome:
-    req.add("STORE", storeKey.get())
