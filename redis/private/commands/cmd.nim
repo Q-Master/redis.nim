@@ -63,8 +63,10 @@ proc addCmd*[T: RedisRequest](req: T, cmd: string, args: varargs[RedisMessage, e
   result.req = encodeCommand(cmd, args)
 
 proc execute*(req: RedisRequest): Future[RedisMessage] {.async.} =
-  await req.redis.sendLine(req.req.prepareRequest())
-  result = await req.redis.parseResponse()
+  let data = req.req.prepareRequest()
+  req.redis.withRedis:
+    await redis.sendLine(data)
+    result = await redis.parseResponse()
 
 proc execute*(req: RedisRequestT[bool]): Future[bool] {.async.} =
   let res = await cast[RedisRequest](req).execute()

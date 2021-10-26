@@ -68,9 +68,9 @@ proc encodeRedis*[T](x: tuple[a: string, b: T]): RedisMessage
 proc encodeRedis*[T](x: array[0..0, (string, T)]): RedisMessage
 
 proc processLineItem(resTyp: RedisMessageKind, item: string, key: bool): RedisMessage
-proc processBulkItem(redis: Redis, resTyp: RedisMessageKind, item: string, key: bool): Future[RedisMessage] {.async.}
-proc processAggregateItem(redis: Redis, resTyp: RedisMessageKind, item: string): Future[RedisMessage] {.async.}
-proc parseResponse*(redis: Redis, key: bool = false): Future[RedisMessage] {.async.} =
+proc processBulkItem(redis: RedisConn, resTyp: RedisMessageKind, item: string, key: bool): Future[RedisMessage] {.async.}
+proc processAggregateItem(redis: RedisConn, resTyp: RedisMessageKind, item: string): Future[RedisMessage] {.async.}
+proc parseResponse*(redis: RedisConn, key: bool = false): Future[RedisMessage] {.async.} =
   while true:
     # We are skipping the ATTRIBUTE type of redis reply always.
     let response = await redis.readLine()
@@ -267,7 +267,7 @@ proc processLineItem(resTyp: RedisMessageKind, item: string, key: bool): RedisMe
     else:
       raise newException(RedisTypeError, "Wrong type for line item")
 
-proc processBulkItem(redis: Redis, resTyp: RedisMessageKind, item: string, key: bool): Future[RedisMessage] {.async.} =
+proc processBulkItem(redis: RedisConn, resTyp: RedisMessageKind, item: string, key: bool): Future[RedisMessage] {.async.} =
   result = RedisMessage(kind: resTyp)
   let stringSize = toBiggestInt(item)
   if stringSize == -1:
@@ -283,7 +283,7 @@ proc processBulkItem(redis: Redis, resTyp: RedisMessageKind, item: string, key: 
     if result.kind == REDIS_MESSAGE_VERB and str.len < 6 and str[3] != ':':
       raise newException(RedisProtocolError, "Verbatim string 4 bytes of content type are missing or incorrectly encoded. length is wrong")
 
-proc processAggregateItem(redis: Redis, resTyp: RedisMessageKind, item: string): Future[RedisMessage] {.async.} =
+proc processAggregateItem(redis: RedisConn, resTyp: RedisMessageKind, item: string): Future[RedisMessage] {.async.} =
   result = RedisMessage(kind: resTyp)
   let arraySize = toBiggestInt(item)
   case resTyp
