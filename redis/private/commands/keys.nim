@@ -48,6 +48,7 @@ proc newRedisSortRequest(redis: Redis): RedisSortRequest =
 
 proc fromRedisSortRequest(req: RedisSortRequest): RedisSortStoreRequest =
   result = newRedisRequest[RedisSortStoreRequest](req.redis)
+  result.req = req.req
   result.by = req.by
   result.limit = req.limit
   result.gets = req.gets

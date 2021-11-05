@@ -226,6 +226,123 @@ suite "Redis commands":
         fail()
       await connection.close()
     waitFor(testKeys())
+
+  test "Lists commands":
+    const KEYS_PATTERN = "KEY[1-5]"
+    proc testLists() {.async.} =
+      var connection = newRedis("localhost", 6379, 0, poolsize=2, timeout=5000)
+      try:
+        var boolRepl: bool
+        var optStrRepl: Option[string]
+        var intRepl: int64
+        var optIntRepl: Option[int64]
+        var intReplArray: seq[int64]
+        var strReplArray: seq[string]
+        var optStrReplArray: seq[Option[string]]
+        await connection.connect()
+        # RPUSH key element [element ...]
+        intRepl = await connection.rPush(KEY1, 1, 2, 3, 4, 5, 6)
+        check(intRepl == 6)
+        # RPUSHX key element [element ...]
+        intRepl = await connection.rPushX(KEY1, 7, 8)
+        check(intRepl == 8)
+        intRepl = await connection.rPushX(KEY2, 1, 2, 3, 4, 5, 6)
+        check(intRepl == 0)
+        # LPUSH key element [element ...]
+        intRepl = await connection.lPush(KEY1, 1, 2)
+        check(intRepl == 10)
+        # LPUSHX key element [element ...]
+        intRepl = await connection.lPushX(KEY1, 7, 8)
+        check(intRepl == 12)
+        intRepl = await connection.lPushX(KEY2, 1, 2, 3, 4, 5, 6)
+        check(intRepl == 0)
+        # LRANGE key start stop
+        strReplArray = await connection.lRange(KEY1, (4 .. 8))
+        check(strReplArray == @["1", "2", "3", "4", "5"])
+        # LREM key count element
+        intRepl = await connection.lRem(KEY1, "1")
+        check(intRepl == 2)
+        # LINDEX key index
+        optStrRepl = await connection.lIndex(KEY1, 0)
+        check(optStrRepl == "8".option)
+        optStrRepl = await connection.lIndex(KEY1, 20)
+        check(optStrRepl.isNone == true)
+        # LSET key index element
+        intRepl = await connection.del(KEY1)
+        intRepl = await connection.rPush(KEY1, 1, 2, 3, 4, 5, 6)
+        boolRepl = await connection.lSet(KEY1, "TEST", 1)
+        optStrRepl = await connection.lIndex(KEY1, 1)
+        check(optStrRepl == "TEST".option)
+        # LTRIM key start stop 
+        intRepl = await connection.del(KEY1)
+        intRepl = await connection.rPush(KEY1, 1, 2, 3, 4, 5, 6)
+        boolRepl = await connection.lTrim(KEY1, (0 .. 2))
+        strReplArray = await connection.lRange(KEY1, (0 .. -1))
+        check(strReplArray == @["1", "2", "3"])
+        # RPOP key [count]
+        intRepl = await connection.del(KEY1)
+        intRepl = await connection.rPush(KEY1, 1, 2, 3, 4, 5, 6)
+        optStrRepl = await connection.rPop(KEY1)
+        check(optStrRepl == "6".option)
+        strReplArray = await connection.rPop(KEY1, 2)
+        check(strReplArray == @["5", "4"])
+        optStrRepl = await connection.rPop(KEY2)
+        check(optStrRepl.isNone)
+        # LPOP key [count]
+        intRepl = await connection.del(KEY1)
+        intRepl = await connection.lPush(KEY1, 1, 2, 3, 4, 5, 6)
+        optStrRepl = await connection.lPop(KEY1)
+        check(optStrRepl == "6".option)
+        strReplArray = await connection.lPop(KEY1, 2)
+        check(strReplArray == @["5", "4"])
+        optStrRepl = await connection.lPop(KEY2)
+        check(optStrRepl.isNone)
+        # LPOS key element [RANK rank] [COUNT num-matches] [MAXLEN len]
+        intRepl = await connection.del(KEY1)
+        intRepl = await connection.lPush(KEY1, "C", "C", "C", "A", "B", "C", "D")
+        optIntRepl = await connection.lPos(KEY1, "C")
+        check(optIntRepl == 1.int64.option)
+        optIntRepl = await connection.lPos(KEY1, "C").rank(3)
+        check(optIntRepl == 5.int64.option)
+        optIntRepl = await connection.lPos(KEY1, "C").rank(3).maxLen(2)
+        check(optIntRepl.isNone)
+        intReplArray = await connection.lPos(KEY1, "C").count(4)
+        check(intReplArray == @[1.int64, 4.int64, 5.int64, 6.int64])
+        intReplArray = await connection.lPos(KEY1, "C").count(4).rank(3)
+        check(intReplArray == @[5.int64, 6.int64])
+        intReplArray = await connection.lPos(KEY1, "C").count(4).maxLen(5)
+        check(intReplArray == @[1.int64, 4.int64])
+        intReplArray = await connection.lPos(KEY1, "C").count(4).maxLen(1)
+        check(intReplArray.len == 0)
+        # LLEN key 
+        intRepl = await connection.del(KEY1)
+        intRepl = await connection.rPush(KEY1, 1, 2, 3, 4, 5, 6)
+        intRepl = await connection.lLen(KEY1)
+        check(intRepl == 6)
+        intRepl = await connection.lLen(KEY2)
+        check(intRepl == 0)
+        # LMOVE source destination LEFT|RIGHT LEFT|RIGHT 
+        optStrRepl = await connection.lMove(KEY1, MOVE_LEFT, KEY2, MOVE_RIGHT)
+        check(optStrRepl == "1".option)
+        intRepl = await connection.lLen(KEY2)
+        check(intRepl == 1)
+        # LINSERT key BEFORE|AFTER pivot element 
+        intRepl = await connection.del(KEY1, KEY2)
+        intRepl = await connection.rPush(KEY1, 1, 2, 3, 4, 5, 6)
+        intRepl = await connection.lInsert(KEY1, "2", "10", INDEX_BEFORE)
+        check(intRepl == 7)
+        strReplArray = await connection.lRange(KEY1, (0 .. -1))
+        check(strReplArray == @["1", "10", "2", "3", "4", "5", "6"])
+        # RPOPLPUSH source destination (deprecated since 6.2)
+        optStrRepl = await connection.rPoplPush(KEY1, KEY2)
+        check(optStrRepl == "6".option)
+        intRepl = await connection.lLen(KEY2)
+        check(intRepl == 1)
+      except RedisConnectionError:
+        echo "Can't connect to Redis instance"
+        fail()
+      await connection.close()
+    waitFor(testLists())
 #[
         let expTime = now()+2.seconds+500.milliseconds
         replGet = await connection.getEx("KEY1").ex(initDuration(seconds=60)).execute()

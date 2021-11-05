@@ -16,5 +16,5 @@ export proto
 export connection except readLine, readRawString
 export Redis, RedisObj, RedisMessage, RedisMessageObj, RedisMessageKind
 export exceptions
-export cmd, conneciton_cmds, keys_cmds, strings_cmds, sets_cmds, hashes_cmds, scripting_cmds, sorted_sets_cmds, server_cmds
+export cmd, conneciton_cmds, keys_cmds, strings_cmds, lists_cmds, sets_cmds, hashes_cmds, scripting_cmds, sorted_sets_cmds, server_cmds
 export asyncfor

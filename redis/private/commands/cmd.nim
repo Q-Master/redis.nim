@@ -106,7 +106,7 @@ proc execute*(req: RedisRequestT[uint16]): Future[uint16] {.async.} =
 
 proc execute*(req: RedisRequestT[Option[int64]]): Future[Option[int64]] {.async.} =
   let res = await cast[RedisRequest](req).execute()
-  if res.kind == REDIS_MESSAGE_NIL:
+  if res.kind in [REDIS_MESSAGE_NIL, REDIS_MESSAGE_STRING]:
     result = int64.none
   else:
     result = res.integer.option

@@ -1,4 +1,4 @@
-import std/[times, options]
+import std/[times, options, asyncdispatch]
 import ./cmd
 
 #[
@@ -7,22 +7,22 @@ import ./cmd
     BLPOP
     BRPOP
     BRPOPLPUSH
-    LINDEX
-    LINSERT
-    LLEN
-    LMOVE
-    LPOP
-    LPOS
-    LPUSH
-    LPUSHX
-    LRANGE
-    LREM
-    LSET
-    LTRIM
-    RPOP
-    RPOPLPUSH
-    RPUSH
-    RPUSHX
+    *LINDEX
+    *LINSERT
+    *LLEN
+    *LMOVE
+    *LPOP
+    *LPOS
+    *LPUSH
+    *LPUSHX
+    *LRANGE
+    *LREM
+    *LSET
+    *LTRIM
+    *RPOP
+    *RPOPLPUSH
+    *RPUSH
+    *RPUSHX
 ]#
 type
   RedisMoveDirection* = enum
@@ -32,21 +32,42 @@ type
     INDEX_BEFORE = "BEFORE"
     INDEX_AFTER = "AFTER"
 
+  RedisListPosRequest* = ref RedisListPosRequestObj
+  RedisListPosRequestObj* = object of RedisRequestT[int64]
+    rank: Option[string]
+    maxLen: Option[string]
+  
+  RedisListPosCountRequest* = ref object of RedisListPosRequest
+    count: string
+
+proc newRedisListPosRequest(redis: Redis): RedisListPosRequest =
+  result = newRedisRequest[RedisListPosRequest](redis)
+
+proc fromRedisListPosRequest(req: RedisListPosRequest): RedisListPosCountRequest =
+  result = newRedisRequest[RedisListPosCountRequest](req.redis)
+  result.req = req.req
+  result.rank = req.rank
+  result.maxLen = req.maxLen
+
 # BLMOVE source destination LEFT|RIGHT LEFT|RIGHT timeout
 proc blMove*(redis: Redis, timeout: Duration, srcKey: string, srcDirection: RedisMoveDirection, destKey: string, destDirection: RedisMoveDirection): RedisRequestT[Option[string]] =
   result = newRedisRequest[RedisRequestT[Option[string]]](redis)
   result.addCmd("BLMOVE", srcKey, destKey, $srcDirection, $destDirection, timeout.inSeconds)
 
 # BLPOP key [key ...] timeout
-proc blPop*(redis: Redis, timeout: Duration, keys: varargs[RedisMessage, encodeRedis]): RedisArrayRequestT[string] =
+proc blPop*(redis: Redis, timeout: Duration, key: string, keys: varargs[string]): RedisArrayRequestT[string] =
   result = newRedisRequest[RedisArrayRequestT[string]](redis)
-  result.addCmd("BLPOP", args=keys)
+  result.addCmd("BLPOP", key)
+  for elem in keys:
+    result.add(elem)
   result.add(timeout.inSeconds)
 
 # BRPOP key [key ...] timeout 
-proc brPop*(redis: Redis, timeout: Duration, keys: varargs[RedisMessage, encodeRedis]): RedisArrayRequestT[string] =
+proc brPop*(redis: Redis, timeout: Duration, key: string, keys: varargs[string]): RedisArrayRequestT[string] =
   result = newRedisRequest[RedisArrayRequestT[string]](redis)
-  result.addCmd("BRPOP", args=keys)
+  result.addCmd("BRPOP", key)
+  for elem in keys:
+    result.add(elem)
   result.add(timeout.inSeconds)
 
 # BRPOPLPUSH source destination timeout (deprecated since 6.2)
@@ -57,7 +78,7 @@ proc brPoplPush*(redis: Redis, timeout: Duration, srcKey, destKey: string): Redi
 # LINDEX key index
 proc lIndex*(redis: Redis, key: string, index: int64): RedisRequestT[Option[string]] =
   result = newRedisRequest[RedisRequestT[Option[string]]](redis)
-  result.addCmd("LINDEX", key, index)
+  result.addCmd("LINDEX", key, $index)
 
 # LINSERT key BEFORE|AFTER pivot element 
 proc lInsert*(redis: Redis, key, pivot, element: string, side: RedisIndexSide): RedisRequestT[int64] =
@@ -81,57 +102,73 @@ proc lPop*(redis: Redis, key: string): RedisRequestT[Option[string]] =
 
 proc lPop*(redis: Redis, key: string, count: SomeInteger): RedisArrayRequestT[string] =
   result = newRedisRequest[RedisArrayRequestT[string]](redis)
-  result.addCmd("LPOP", key, count.int64)
+  result.addCmd("LPOP", key, $count)
 
 # LPOS key element [RANK rank] [COUNT num-matches] [MAXLEN len]
-proc lPos*(redis: Redis, key, element: string, rank: Option[SomeInteger] = int64.none, maxLen: Option[SomeInteger] = int64.none): RedisRequestT[int64] =
-  result = newRedisRequest[RedisRequestT[int64]](redis)
-  result.addCmd("LPOS", key, element)
-  if rank.isSome:
-    result.add("RANK", rank.get().int64)
-  if maxLen.isSome:
-    result.add("MAXLEN", maxLen.get().int64)
+proc genlPos(req: RedisListPosRequest | RedisListPosCountRequest)
 
-proc lPos*(redis: Redis, key, element: string, count: SomeInteger, rank: Option[int64] = int64.none, maxLen: Option[int64] = int64.none): RedisArrayRequestT[int64] =
-  result = newRedisRequest[RedisRequestT[int64]](redis)
+proc lPos*(redis: Redis, key, element: string): RedisListPosRequest =
+  result = newRedisListPosRequest(redis)
   result.addCmd("LPOS", key, element)
-  if rank.isSome:
-    result.add("RANK", rank.get().int64)
-  if maxLen.isSome:
-    result.add("MAXLEN", maxLen.get().int64)
-  result.add("COUNT", count.int64)
+
+proc rank*[T: RedisListPosRequest](req: T, rank: SomeInteger): T =
+  result = req
+  result.rank = option($rank)
+
+proc maxLen*[T: RedisListPosRequest](req: T, maxLen: SomeInteger): T =
+  result = req
+  result.maxLen = option($maxLen)
+
+proc count*(req: RedisListPosRequest, count: SomeInteger): RedisListPosCountRequest =
+  result = fromRedisListPosRequest(req)
+  result.count = $count
+
+proc count*(req: RedisListPosCountRequest, count: SomeInteger): RedisListPosCountRequest =
+  result = req
+  result.count = $count
+
+proc execute*(req: RedisListPosRequest): Future[Option[int64]] =
+  req.genlPos()
+  result = cast[RedisRequestT[Option[int64]]](req).execute()
+
+proc execute*(req: RedisListPosCountRequest): Future[seq[int64]] =
+  req.genlPos()
+  req.add("COUNT", req.count)
+  result = cast[RedisArrayRequestT[int64]](req).execute()  
 
 # LPUSH key element [element ...]
-proc lPush*(redis: Redis, key: string, elements: varargs[RedisMessage, encodeRedis]): RedisRequestT[int64] =
+proc lPush*(redis: Redis, key: string, elements: varargs[string, `$`]): RedisRequestT[int64] =
   result = newRedisRequest[RedisRequestT[int64]](redis)
   result.addCmd("LPUSH", key)
-  result.add(data = elements)
+  for element in elements:
+    result.add(element)
 
 # LPUSHX key element [element ...] 
-proc lPushX*(redis: Redis, key: string, elements: varargs[RedisMessage, encodeRedis]): RedisRequestT[int64] =
+proc lPushX*(redis: Redis, key: string, elements: varargs[string, `$`]): RedisRequestT[int64] =
   result = newRedisRequest[RedisRequestT[int64]](redis)
   result.addCmd("LPUSHX", key)
-  result.add(data = elements)
+  for element in elements:
+    result.add(element)
 
 # LRANGE key start stop
-proc lRange*(redis: Redis, key: string, start, stop: SomeInteger): RedisArrayRequestT[string] =
+proc lRange*(redis: Redis, key: string, ranges: Slice[int]): RedisArrayRequestT[string] =
   result = newRedisRequest[RedisArrayRequestT[string]](redis)
-  result.addCmd("LRANGE", key, start.int64, stop.int64)
+  result.addCmd("LRANGE", key, $ranges.a, $ranges.b)
 
 # LREM key count element
-proc lRem*(redis: Redis, key, element: string, count: SomeInteger): RedisRequestT[int64] =
+proc lRem*(redis: Redis, key, element: string, count: SomeInteger = 0): RedisRequestT[int64] =
   result = newRedisRequest[RedisRequestT[int64]](redis)
-  result.addCmd("LREM", key, count.int64, element)
+  result.addCmd("LREM", key, $count, element)
 
 # LSET key index element
 proc lSet*(redis: Redis, key, element: string, index: SomeInteger): RedisRequestT[RedisStrBool] =
   result = newRedisRequest[RedisRequestT[RedisStrBool]](redis)
-  result.addCmd("LSET", key, index.int64, element)
+  result.addCmd("LSET", key, $index, element)
 
 # LTRIM key start stop 
-proc lTrim*(redis: Redis, key: string, start, stop: SomeInteger): RedisRequestT[RedisStrBool] =
+proc lTrim*(redis: Redis, key: string, ranges: Slice[int]): RedisRequestT[RedisStrBool] =
   result = newRedisRequest[RedisRequestT[RedisStrBool]](redis)
-  result.addCmd("LTRIM", key, start.int64, stop.int64)
+  result.addCmd("LTRIM", key, $ranges.a, $ranges.b)
 
 # RPOP key [count]
 proc rPop*(redis: Redis, key: string): RedisRequestT[Option[string]] =
@@ -140,21 +177,31 @@ proc rPop*(redis: Redis, key: string): RedisRequestT[Option[string]] =
 
 proc rPop*(redis: Redis, key: string, count: SomeInteger): RedisArrayRequestT[string] =
   result = newRedisRequest[RedisArrayRequestT[string]](redis)
-  result.addCmd("RPOP", key, count.int64)
+  result.addCmd("RPOP", key, $count)
 
 # RPOPLPUSH source destination (deprecated since 6.2)
-proc brPoplPush*(redis: Redis, srcKey, destKey: string): RedisRequestT[Option[string]] =
+proc rPoplPush*(redis: Redis, srcKey, destKey: string): RedisRequestT[Option[string]] =
   result = newRedisRequest[RedisRequestT[Option[string]]](redis)
   result.addCmd("RPOPLPUSH", srcKey, destKey)
 
 # RPUSH key element [element ...]
-proc rPush*(redis: Redis, key: string, elements: varargs[RedisMessage, encodeRedis]): RedisRequestT[int64] =
+proc rPush*(redis: Redis, key: string, elements: varargs[string, `$`]): RedisRequestT[int64] =
   result = newRedisRequest[RedisRequestT[int64]](redis)
   result.addCmd("RPUSH", key)
-  result.add(data = elements)
+  for element in elements:
+    result.add(element)
 
 # RPUSHX key element [element ...]
-proc rPushX*(redis: Redis, key: string, elements: varargs[RedisMessage, encodeRedis]): RedisRequestT[int64] =
+proc rPushX*(redis: Redis, key: string, elements: varargs[string, `$`]): RedisRequestT[int64] =
   result = newRedisRequest[RedisRequestT[int64]](redis)
   result.addCmd("RPUSHX", key)
-  result.add(data = elements)
+  for element in elements:
+    result.add(element)
+
+#------- pvt
+
+proc genlPos(req: RedisListPosRequest | RedisListPosCountRequest) =
+  if req.rank.isSome:
+    req.add("RANK", req.rank.get())
+  if req.maxLen.isSome:
+    req.add("MAXLEN", req.maxLen.get())
