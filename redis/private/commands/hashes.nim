@@ -3,30 +3,35 @@ import ./cmd
 
 #[
   Block of hashes commands 
-    HDEL
-    HEXISTS
-    HGET
-    HGETALL
-    HINCRBY
-    HINCRBYFLOAT
-    HKEYS
-    HLEN
-    HMGET
-    HMSET
-    HRANDFIELD
+    *HDEL
+    *HEXISTS
+    *HGET
+    *HGETALL
+    *HINCRBY
+    *HINCRBYFLOAT
+    *HKEYS
+    *HLEN
+    *HMGET
+    *HMSET
+    *HRANDFIELD
     HSCAN
-    HSET
-    HSETNX
-    HSTRLEN
-    HVALS
+    *HSET
+    *HSETNX
+    *HSTRLEN
+    *HVALS
 ]#
 
+type
+  RandFieldRequestT* = ref object of RedisRequestT[Option[string]]
+  RandFieldRequestCountT* = ref object of RedisArrayRequestT[string]
+  RandFieldRequestCountWithValuesT* = ref object of RedisRequestT[Table[string, string]]
+
 # HDEL key field [field ...] 
-proc hDel*(redis: Redis, key, field: string, fields: varargs[RedisMessage, encodeRedis]): RedisRequestT[int64] =
+proc hDel*(redis: Redis, key, field: string, fields: varargs[string, `$`]): RedisRequestT[int64] =
   result = newRedisRequest[RedisRequestT[int64]](redis)
   result.addCmd("HDEL", key, field)
-  if fields.len > 0:
-    result.add(data = fields)
+  for f in fields:
+    result.add(f)
 
 # HEXISTS key field 
 proc hExists*(redis: Redis, key, field: string): RedisRequestT[RedisIntBool] =
@@ -39,8 +44,8 @@ proc hGet*(redis: Redis, key, field: string): RedisRequestT[Option[string]] =
   result.addCmd("HGET", key, field)
 
 # HGETALL key 
-proc hGetAll*(redis: Redis, key: string): RedisArrayRequestT[Table[string, string]] =
-  result = newRedisRequest[RedisArrayRequestT[Table[string, string]]](redis)
+proc hGetAll*(redis: Redis, key: string): RedisRequestT[Table[string, string]] =
+  result = newRedisRequest[RedisRequestT[Table[string, string]]](redis)
   result.addCmd("HGETALL", key)
 
 proc fromRedisReq*(_: type[Table[string, string]], req: RedisMessage): Table[string, string] =
@@ -51,12 +56,12 @@ proc fromRedisReq*(_: type[Table[string, string]], req: RedisMessage): Table[str
 # HINCRBY key field increment 
 proc hIncrBy*(redis: Redis, key, field: string, increment: SomeInteger): RedisRequestT[int64] =
   result = newRedisRequest[RedisRequestT[int64]](redis)
-  result.addCmd("HINCRBY", key, field, increment.int64)
+  result.addCmd("HINCRBY", key, field, $increment)
 
 # HINCRBYFLOAT key field increment 
-proc hIncrBy*(redis: Redis, key, field: string, increment: SomeFloat): RedisRequestT[float] =
-  result = newRedisRequest[RedisRequestT[float]](redis)
-  result.addCmd("HINCRBYFLOAT", key, field, increment.float)
+proc hIncrBy*(redis: Redis, key, field: string, increment: SomeFloat): RedisRequestT[RedisStrFloat] =
+  result = newRedisRequest[RedisRequestT[RedisStrFloat]](redis)
+  result.addCmd("HINCRBYFLOAT", key, field, $increment)
 
 # HKEYS key 
 proc hKeys*(redis: Redis, key: string): RedisArrayRequestT[string] =
@@ -78,22 +83,28 @@ proc hmGet*(redis: Redis, key, field: string, fields: varargs[RedisMessage, enco
 # HMSET key field value [field value ...] 
 proc hmSet*[T](redis: Redis, key: string, fieldValue: tuple[a: string, b: T], fieldValues: varargs[tuple[a: string, b: T]]): RedisRequestT[RedisStrBool] =
   result = newRedisRequest[RedisRequestT[RedisStrBool]](redis)
-  result.addCmd("HMSET", key, fieldValue.a, fieldValue.b)
+  result.addCmd("HMSET", key, fieldValue.a, $fieldValue.b)
   for kv in fieldValues:
-    result.add(kv.a, kv.b)
+    result.add(kv.a, $kv.b)
+
+proc hmSet*[T](redis: Redis, key: string, fieldValues: Table[string, T] | TableRef[string, T]): RedisRequestT[RedisStrBool] =
+  result = newRedisRequest[RedisRequestT[RedisStrBool]](redis)
+  result.addCmd("HMSET", key)
+  for k,v in fieldValues:
+    result.add(k, $v)
 
 # HRANDFIELD key [count [WITHVALUES]] 
-proc hRandField*(redis: Redis, key: string): RedisRequestT[Option[string]] =
-  result = newRedisRequest[RedisRequestT[Option[string]]](redis)
+proc hRandField*(redis: Redis, key: string): RandFieldRequestT =
+  result = newRedisRequest[RandFieldRequestT](redis)
   result.addCmd("HRANDFIELD", key)
 
-proc hRandField*(redis: Redis, key: string, count: SomeInteger): RedisArrayRequestT[Option[string]] =
-  result = newRedisRequest[RedisArrayRequestT[Option[string]]](redis)
-  result.addCmd("HRANDFIELD", key, count.int64)
+proc count*(req: RandFieldRequestT, count: SomeInteger): RandFieldRequestCountT =
+  result = cast[RandFieldRequestCountT](req)
+  result.add($count)
 
-proc hRandFieldWithValues*(redis: Redis, key: string, count: SomeInteger): RedisArrayRequestT[Table[string, string]] =
-  result = newRedisRequest[RedisArrayRequestT[Table[string, string]]](redis)
-  result.addCmd("HRANDFIELD", key, count.int64, "WITHVALUES")
+proc withValues*(req: RandFieldRequestCountT): RandFieldRequestCountWithValuesT =
+  result = cast[RandFieldRequestCountWithValuesT](req)
+  result.add("WITHVALUES")
 
 # HSCAN key cursor [MATCH pattern] [COUNT count] 
 proc hScan*(redis: Redis, match: Option[string] = string.none, count: int = -1): RedisCursorRequestT[tuple[key: string, value: string]] =
@@ -114,14 +125,20 @@ proc next*(cursor: RedisCursorRequestT[tuple[key: string, value: string]]): Futu
 # HSET key field value [field value ...] 
 proc hSet*[T](redis: Redis, key: string, fieldValue: tuple[a: string, b: T], fieldValues: varargs[tuple[a: string, b: T]]): RedisRequestT[int64] =
   result = newRedisRequest[RedisRequestT[int64]](redis)
-  result.addCmd("HSET", key, fieldValue.a, fieldValue.b)
+  result.addCmd("HSET", key, fieldValue.a, $fieldValue.b)
   for kv in fieldValues:
-    result.add(kv.a, kv.b)
+    result.add(kv.a, $kv.b)
+
+proc hSet*[T](redis: Redis, key: string, fieldValues: Table[string, T] | TableRef[string, T]): RedisRequestT[int64] =
+  result = newRedisRequest[RedisRequestT[int64]](redis)
+  result.addCmd("HSET", key)
+  for k,v in fieldValues:
+    result.add(k, $v)
 
 # HSETNX key field value 
 proc hSetNX*[T](redis: Redis, key, field: string, value: T): RedisRequestT[RedisIntBool] =
   result = newRedisRequest[RedisRequestT[RedisIntBool]](redis)
-  result.addCmd("HSETNX", key, field, value)
+  result.addCmd("HSETNX", key, field, $value)
 
 # HSTRLEN key field 
 proc hStrLen*(redis: Redis, key, field: string): RedisRequestT[int64] =

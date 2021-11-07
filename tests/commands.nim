@@ -1,5 +1,5 @@
 import unittest
-import std/[asyncdispatch, times, options]
+import std/[asyncdispatch, times, options, tables]
 import redis/redis
 
 suite "Redis commands":
@@ -179,7 +179,6 @@ suite "Redis commands":
         var boolRepl: bool
         var optStrRepl: Option[string]
         var intRepl: int64
-        var floatRepl: float
         var strReplArray: seq[string]
         await connection.connect()
         # DEL key [key ...] 
@@ -228,7 +227,6 @@ suite "Redis commands":
     waitFor(testKeys())
 
   test "Lists commands":
-    const KEYS_PATTERN = "KEY[1-5]"
     proc testLists() {.async.} =
       var connection = newRedis("localhost", 6379, 0, poolsize=2, timeout=5000)
       try:
@@ -238,7 +236,6 @@ suite "Redis commands":
         var optIntRepl: Option[int64]
         var intReplArray: seq[int64]
         var strReplArray: seq[string]
-        var optStrReplArray: seq[Option[string]]
         await connection.connect()
         # RPUSH key element [element ...]
         intRepl = await connection.rPush(KEY1, 1, 2, 3, 4, 5, 6)
@@ -343,6 +340,104 @@ suite "Redis commands":
         fail()
       await connection.close()
     waitFor(testLists())
+
+  test "Hashes commands":
+    proc testHashes() {.async.} =
+      var connection = newRedis("localhost", 6379, 0, poolsize=2, timeout=5000)
+      try:
+        var boolRepl: bool
+        var optStrRepl: Option[string]
+        var intRepl: int64
+        var floatRepl: float
+        var optIntRepl: Option[int64]
+        var intReplArray: seq[int64]
+        var strReplArray: seq[string]
+        var optStrReplArray: seq[Option[string]]
+        var tableRepl: Table[string, string]
+        await connection.connect()
+        # HSET key field value [field value ...] 
+        intRepl = await connection.hSet(KEY1, ("k", 1), ("v", 2))
+        check(intRepl == 2)
+        intRepl = await connection.hSet(KEY1, {"a": 1, "b": 2}.toTable())
+        check(intRepl == 2)
+        # HSETNX key field value 
+        boolRepl = await connection.hSetNX(KEY1, "k", 1)
+        check(boolRepl == false)
+        boolRepl = await connection.hSetNX(KEY1, "t", 3)
+        check(boolRepl == true)
+        # HSTRLEN key field 
+        intRepl = await connection.hStrLen(KEY1, "k")
+        check(intRepl == 1)
+        intRepl = await connection.hStrLen(KEY1, "e")
+        check(intRepl == 0)
+        # HVALS key 
+        intRepl = await connection.del(KEY1)
+        intRepl = await connection.hSet(KEY1, {"a": 1, "b": 2, "c": 3}.toTable())
+        strReplArray = await connection.hVals(KEY1)
+        check(strReplArray == @["1", "2", "3"])
+        # HGET key field 
+        optStrRepl = await connection.hGet(KEY1, "a")
+        check(optStrRepl == "1".option)
+        optStrRepl = await connection.hGet(KEY1, "e")
+        check(optStrRepl.isNone)
+        # HGETALL key 
+        tableRepl = await connection.hGetAll(KEY1)
+        check(tableRepl == {"a": "1", "b": "2", "c": "3"}.toTable())
+        # HEXISTS key field 
+        boolRepl = await connection.hExists(KEY1, "a")
+        check(boolRepl == true)
+        boolRepl = await connection.hExists(KEY1, "f")
+        check(boolRepl == false)
+        boolRepl = await connection.hExists(KEY2, "f")
+        check(boolRepl == false)
+        # HDEL key field [field ...] 
+        intRepl = await connection.hDel(KEY1, "a", "b", "z")
+        check(intRepl == 2)
+        tableRepl = await connection.hGetAll(KEY1)
+        check(tableRepl == {"c": "3"}.toTable())
+        # HKEYS key 
+        strReplArray = await connection.hKeys(KEY1)
+        check(strReplArray == @["c"])
+        # HLEN key 
+        intRepl = await connection.hLen(KEY1)
+        check(intRepl == 1)
+        # HMSET key field value [field value ...] 
+        intRepl = await connection.del(KEY1)
+        boolRepl = await connection.hmSet(KEY1, ("k", 1), ("v", 2))
+        check(boolRepl == true)
+        boolRepl = await connection.hmSet(KEY1, {"a": 1, "b": 2}.toTable())
+        check(boolRepl == true)
+        # HMGET key field [field ...] 
+        intRepl = await connection.del(KEY1)
+        intRepl = await connection.hSet(KEY1, {"a": 1, "b": 2, "c": 3}.toTable())
+        optStrReplArray = await connection.hmGet(KEY1, "a", "b", "d")
+        check(optStrReplArray == @["1".option, "2".option, string.none])
+        # HRANDFIELD key [count [WITHVALUES]] 
+        intRepl = await connection.del(KEY1)
+        intRepl = await connection.hSet(KEY1, {"a": 1, "b": 2, "c": 3}.toTable())
+        optStrRepl = await connection.hRandField(KEY1)
+        check(optStrRepl in ["a".option, "b".option, "c".option])
+        optStrRepl = await connection.hRandField(KEY2)
+        check(optStrRepl.isNone)
+        strReplArray = await connection.hRandField(KEY1).count(2)
+        check(strReplArray.len == 2)
+        tableRepl = await connection.hRandField(KEY1).count(2).withValues()
+        check(tableRepl.len == 2)
+        # HINCRBY key field increment 
+        intRepl = await connection.del(KEY1)
+        intRepl = await connection.hSet(KEY1, ("a", 1))
+        intRepl = await connection.hIncrBy(KEY1, "a", 2)
+        check(intRepl == 3)
+        # HINCRBYFLOAT key field increment 
+        intRepl = await connection.del(KEY1)
+        intRepl = await connection.hSet(KEY1, ("a", 1.5))
+        floatRepl = await connection.hIncrBy(KEY1, "a", 0.2)
+        check(floatRepl == 1.7)
+      except RedisConnectionError:
+        echo "Can't connect to Redis instance"
+        fail()
+      await connection.close()
+    waitFor(testHashes())
 #[
         let expTime = now()+2.seconds+500.milliseconds
         replGet = await connection.getEx("KEY1").ex(initDuration(seconds=60)).execute()
