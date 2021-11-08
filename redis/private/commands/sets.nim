@@ -1,32 +1,39 @@
 import std/[options]
 import ./cmd
+import ../exceptions
 
 #[
   Block of sets commands
-    SADD
-    SCARD
-    SDIFF
-    SDIFFSTORE
-    SINTER
+    *SADD
+    *SCARD
+    *SDIFF
+    *SDIFFSTORE
+    *SINTER
     SINTERCARD
-    SINTERSTORE
-    SISMEMBER
-    SMEMBERS
-    SMISMEMBER
-    SMOVE
-    SPOP
-    SRANDMEMBER
-    SREM
+    *SINTERSTORE
+    *SISMEMBER
+    *SMEMBERS
+    *SMISMEMBER
+    *SMOVE
+    *SPOP
+    *SRANDMEMBER
+    *SREM
     SSCAN
-    SUNION
-    SUNIONSTORE
+    *SUNION
+    *SUNIONSTORE
 ]#
 
-#  SADD key member [member ...]
-proc sAdd*(redis: Redis, key: string, members: varargs[RedisMessage, encodeRedis]): RedisRequestT[int64] =
+type
+  RedisSRandPopRequestT* = ref object of RedisRequestT[Option[string]]
+
+# SADD key member [member ...]
+proc sAdd*(redis: Redis, key: string, members: varargs[string, `$`]): RedisRequestT[int64] =
   result = newRedisRequest[RedisRequestT[int64]](redis)
   result.addCmd("SADD", key)
-  result.add(data = members)
+  if members.len == 0:
+    raise newException(RedisCommandError, "SADD must have at least one member to check")
+  for member in members:
+    result.add(member)
 
 # SCARD key 
 proc sCard*(redis: Redis, key: string): RedisRequestT[int64] =
@@ -34,34 +41,39 @@ proc sCard*(redis: Redis, key: string): RedisRequestT[int64] =
   result.addCmd("SCARD", key)
 
 # SDIFF key [key ...]
-proc sDiff*(redis: Redis, key: string, keys: varargs[RedisMessage, encodeRedis]): RedisArrayRequestT[string] =
+proc sDiff*(redis: Redis, key: string, keys: varargs[string]): RedisArrayRequestT[string] =
   result = newRedisRequest[RedisArrayRequestT[string]](redis)
   result.addCmd("SDIFF", key)
-  result.add(data = keys)
+  for k in keys:
+    result.add(k)
 
 # SDIFFSTORE destination key [key ...]
-proc sDiffStore*(redis: Redis, destKey, key: string, keys: varargs[RedisMessage, encodeRedis]): RedisRequestT[int64] =
+proc sDiffStore*(redis: Redis, destKey, key: string, keys: varargs[string]): RedisRequestT[int64] =
   result = newRedisRequest[RedisRequestT[int64]](redis)
   result.addCmd("SDIFFSTORE", destKey, key)
-  result.add(data = keys)
+  for k in keys:
+    result.add(k)
 
 # SINTER key [key ...] 
-proc sInter*(redis: Redis, key: string, keys: varargs[RedisMessage, encodeRedis]): RedisArrayRequestT[string] =
+proc sInter*(redis: Redis, key: string, keys: varargs[string]): RedisArrayRequestT[string] =
   result = newRedisRequest[RedisArrayRequestT[string]](redis)
   result.addCmd("SINTER", key)
-  result.add(data = keys)
+  for k in keys:
+    result.add(k)
 
 # SINTERCARD key [key ...]
-proc sInterCard*(redis: Redis, key: string, keys: varargs[RedisMessage, encodeRedis]): RedisRequestT[int64] =
+proc sInterCard*(redis: Redis, key: string, keys: varargs[string]): RedisRequestT[int64] =
   result = newRedisRequest[RedisRequestT[int64]](redis)
   result.addCmd("SINTERCARD", key)
-  result.add(data = keys)
+  for k in keys:
+    result.add(k)
 
 # SINTERSTORE destination key [key ...] 
-proc sInterStore*(redis: Redis, destKey, key: string, keys: varargs[RedisMessage, encodeRedis]): RedisRequestT[int64] =
+proc sInterStore*(redis: Redis, destKey, key: string, keys: varargs[string]): RedisRequestT[int64] =
   result = newRedisRequest[RedisRequestT[int64]](redis)
   result.addCmd("SINTERSTORE", destKey, key)
-  result.add(data = keys)
+  for k in keys:
+    result.add(k)
 
 # SISMEMBER key member
 proc sIsMember*(redis: Redis, key, member: string): RedisRequestT[RedisIntBool] =
@@ -74,10 +86,13 @@ proc sMembers*(redis: Redis, key: string): RedisArrayRequestT[string] =
   result.addCmd("SMEMBERS", key)
 
 # SMISMEMBER key member [member ...] 
-proc smIsMember*(redis: Redis, key, member: string, members: varargs[RedisMessage, encodeRedis]): RedisArrayRequestT[RedisIntBool] =
+proc smIsMember*(redis: Redis, key: string, members: varargs[string, `$`]): RedisArrayRequestT[RedisIntBool] =
   result = newRedisRequest[RedisArrayRequestT[RedisIntBool]](redis)
-  result.addCmd("SMISMEMBER", key, member)
-  result.add(data = members)
+  result.addCmd("SMISMEMBER", key)
+  if members.len == 0:
+    raise newException(RedisCommandError, "SMISMEMBER must have at least one member to check")
+  for m in members:
+    result.add(m)
 
 # SMOVE source destination member
 proc sMove*(redis: Redis, srcKey, destKey, member: string): RedisRequestT[RedisIntBool] =
@@ -85,28 +100,27 @@ proc sMove*(redis: Redis, srcKey, destKey, member: string): RedisRequestT[RedisI
   result.addCmd("SMOVE", srcKey, destKey, member)
 
 # SPOP key [count]
-proc sPop*(redis: Redis, key: string): RedisRequestT[Option[string]] =
-  result = newRedisRequest[RedisRequestT[Option[string]]](redis)
+proc sPop*(redis: Redis, key: string): RedisSRandPopRequestT =
+  result = newRedisRequest[RedisSRandPopRequestT](redis)
   result.addCmd("SPOP", key)
 
-proc sPop*(redis: Redis, key: string, count: SomeInteger): RedisArrayRequestT[string] =
-  result = newRedisRequest[RedisArrayRequestT[string]](redis)
-  result.addCmd("SPOP", key, count.int64)
-
 # SRANDMEMBER key [count] 
-proc sRandMember*(redis: Redis, key: string): RedisRequestT[Option[string]] =
-  result = newRedisRequest[RedisRequestT[Option[string]]](redis)
+proc sRandMember*(redis: Redis, key: string): RedisSRandPopRequestT =
+  result = newRedisRequest[RedisSRandPopRequestT](redis)
   result.addCmd("SRANDMEMBER", key)
 
-proc sRandMember*(redis: Redis, key: string, count: SomeInteger): RedisArrayRequestT[string] =
-  result = newRedisRequest[RedisArrayRequestT[string]](redis)
-  result.addCmd("SRANDMEMBER", key, count.int64)
+proc count*(req: RedisSRandPopRequestT, count: SomeInteger): RedisArrayRequestT[string] =
+  result = cast[RedisArrayRequestT[string]](req)
+  result.add($count)
 
 # SREM key member [member ...] 
-proc sRem*(redis: Redis, key, member: string, members: varargs[RedisMessage, encodeRedis]): RedisRequestT[int64] =
+proc sRem*(redis: Redis, key: string, members: varargs[string, `$`]): RedisRequestT[int64] =
   result = newRedisRequest[RedisRequestT[int64]](redis)
-  result.addCmd("SREM", key, member)
-  result.add(data = members)
+  result.addCmd("SREM", key)
+  if members.len == 0:
+    raise newException(RedisCommandError, "SREM must have at least one member to check")
+  for m in members:
+    result.add(m)
 
 # SSCAN key cursor [MATCH pattern] [COUNT count] 
 proc sScan*(redis: Redis, match: Option[string] = string.none, count: int = -1): RedisCursorRequestT[string] =
@@ -118,13 +132,15 @@ proc sScan*(redis: Redis, match: Option[string] = string.none, count: int = -1):
     result.add("COUNT", count)
 
 # SUNION key [key ...] 
-proc sUnion*(redis: Redis, key: string, keys: varargs[RedisMessage, encodeRedis]): RedisArrayRequestT[string] =
+proc sUnion*(redis: Redis, key: string, keys: varargs[string]): RedisArrayRequestT[string] =
   result = newRedisRequest[RedisArrayRequestT[string]](redis)
   result.addCmd("SUNION", key)
-  result.add(data = keys)
+  for k in keys:
+    result.add(k)
 
 # SUNIONSTORE destination key [key ...] 
-proc sUnionStore*(redis: Redis, destKey, key: string, keys: varargs[RedisMessage, encodeRedis]): RedisRequestT[int64] =
+proc sUnionStore*(redis: Redis, destKey, key: string, keys: varargs[string]): RedisRequestT[int64] =
   result = newRedisRequest[RedisRequestT[int64]](redis)
   result.addCmd("SUNIONSTORE", destKey, key)
-  result.add(data = keys)
+  for k in keys:
+    result.add(k)

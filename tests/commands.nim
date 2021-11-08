@@ -349,8 +349,6 @@ suite "Redis commands":
         var optStrRepl: Option[string]
         var intRepl: int64
         var floatRepl: float
-        var optIntRepl: Option[int64]
-        var intReplArray: seq[int64]
         var strReplArray: seq[string]
         var optStrReplArray: seq[Option[string]]
         var tableRepl: Table[string, string]
@@ -438,6 +436,105 @@ suite "Redis commands":
         fail()
       await connection.close()
     waitFor(testHashes())
+  
+  test "Sets commands":
+    proc testSets() {.async.} =
+      var connection = newRedis("localhost", 6379, 0, poolsize=2, timeout=5000)
+      try:
+        var boolRepl: bool
+        var optStrRepl: Option[string]
+        var intRepl: int64
+        var floatRepl: float
+        var optIntRepl: Option[int64]
+        var intReplArray: seq[int64]
+        var strReplArray: seq[string]
+        var boolReplArray: seq[bool]
+        var optStrReplArray: seq[Option[string]]
+        var tableRepl: Table[string, string]
+        await connection.connect()
+        # SADD key member [member ...]
+        intRepl = await connection.sAdd(KEY1, 1, 2, 3, "4", 4)
+        check(intRepl == 4)
+        expect RedisCommandError:
+          intRepl = await connection.sAdd(KEY1)
+        # SMEMBERS key 
+        strReplArray = await connection.sMembers(KEY1)
+        check(strReplArray == @["1", "2", "3", "4"])
+        # SISMEMBER key member
+        boolRepl = await connection.sIsMember(KEY1, "1")
+        check(boolRepl == true)
+        boolRepl = await connection.sIsMember(KEY1, "NotAMember")
+        check(boolRepl == false)
+        # SMISMEMBER key member [member ...] 
+        boolReplArray = await connection.smIsMember(KEY1, 1, 2, "NotAMember")
+        check(boolReplArray == @[true, true, false])
+        expect RedisCommandError:
+          boolReplArray = await connection.smIsMember(KEY1)
+        # SCARD key 
+        intRepl = await connection.sCard(KEY1)
+        check(intRepl == 4)
+        # SDIFF key [key ...]
+        intRepl = await connection.del(KEY1)
+        intRepl = await connection.sAdd(KEY1, "1", "2", "3", "4")
+        intRepl = await connection.sAdd(KEY2, "1", "2", "4", "5")
+        strReplArray = await connection.sDiff(KEY1, KEY2)
+        check(strReplArray == @["3"])
+        # SDIFFSTORE destination key [key ...]
+        intRepl = await connection.sDiffStore(KEY3, KEY1, KEY2)
+        check(intRepl == 1)
+        strReplArray = await connection.sMembers(KEY3)
+        check(strReplArray == @["3"])
+        # SINTER key [key ...] 
+        strReplArray = await connection.sInter(KEY1, KEY2)
+        check(strReplArray == @["1", "2", "4"])
+        # SINTERSTORE destination key [key ...] 
+        intRepl = await connection.sInterStore(KEY3, KEY1, KEY2)
+        check(intRepl == 3)
+        strReplArray = await connection.sMembers(KEY3)
+        check(strReplArray == @["1", "2", "4"])
+        # SMOVE source destination member
+        intRepl = await connection.del(KEY2, KEY3)
+        boolRepl = await connection.sMove(KEY1, KEY2, "1")
+        check(boolRepl == true)
+        boolRepl = await connection.sMove(KEY1, KEY2, "NotAMember")
+        check(boolRepl == false)
+        strReplArray = await connection.sMembers(KEY2)
+        check(strReplArray == @["1"])
+        # SPOP key [count]
+        optStrRepl = await connection.sPop(KEY1)
+        check(optStrRepl in @["2".option, "3".option, "4".option])
+        strReplArray = await connection.sPop(KEY1).count(2)
+        check(strReplArray.len == 2)
+        check(strReplArray == @["2", "4"] or strReplArray == @["3", "4"] or strReplArray == @["2", "3"])
+        # SRANDMEMBER key [count] 
+        intRepl = await connection.del(KEY1, KEY2)
+        intRepl = await connection.sAdd(KEY1, "1", "2", "3")
+        optStrRepl = await connection.sRandMember(KEY1)
+        check(optStrRepl in @["1".option, "2".option, "3".option])
+        strReplArray = await connection.sRandMember(KEY1).count(2)
+        check(strReplArray == @["1", "2"] or strReplArray == @["1", "3"] or strReplArray == @["2", "3"])
+        # SREM key member [member ...] 
+        intRepl = await connection.sRem(KEY1, "1", "2", "NotAMember")
+        check(intRepl == 2)
+        strReplArray = await connection.sMembers(KEY1)
+        check(strReplArray == @["3"])
+        # SUNION key [key ...] 
+        intRepl = await connection.del(KEY1, KEY2, KEY3)
+        intRepl = await connection.sAdd(KEY1, "1", "2", "3", "4")
+        intRepl = await connection.sAdd(KEY2, "1", "2", "5", "6")
+        strReplArray = await connection.sUnion(KEY1, KEY2)
+        check(strReplArray == @["1", "2", "3", "4", "5", "6"])
+        # SUNIONSTORE destination key [key ...] 
+        intRepl = await connection.sUnionStore(KEY3, KEY1, KEY2)
+        check(intRepl == 6)
+        strReplArray = await connection.sMembers(KEY3)
+        check(strReplArray == @["1", "2", "3", "4", "5", "6"])
+      except RedisConnectionError:
+        echo "Can't connect to Redis instance"
+        fail()
+      await connection.close()
+    waitFor(testSets())
+
 #[
         let expTime = now()+2.seconds+500.milliseconds
         replGet = await connection.getEx("KEY1").ex(initDuration(seconds=60)).execute()
