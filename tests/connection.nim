@@ -9,27 +9,30 @@ suite "Redis connection":
 
   test "Simple connect/disconnect":
     proc testConnection() {.async} =
-      var pool = newRedisPool("localhost", 6379, 0, poolsize=2)
+      var connection = newRedis("localhost", 6379, 0, poolsize=2, timeout=5000)
       try:
-        var connection = await pool.acquire(5000)
-        await connection.sendLine(@["PING"])
-        echo await connection.readLine()
-        connection.release()
+        await connection.connect()
+        connection.withRedis:
+          await redis.sendLine(@["PING"])
+          let replStr = await redis.readLine()
+          check(replStr == "+PONG")
       except RedisConnectionError:
         echo "Can't connect to Redis instance"
         fail()
-      await pool.close()
+      await connection.close()
     waitFor(testConnection())
 
   test "Simple connect/disconnect using with statement":
     proc testConnection() {.async} =
-      var pool = newRedisPool("localhost", 6379, 0, poolsize=2)
+      var connection = newRedis("localhost", 6379, 0, poolsize=2, timeout=5000)
       try:
-        pool.withRedis 5000:
+        await connection.connect()
+        connection.withRedis:
           await redis.sendLine(@["PING"])
-          echo await redis.readLine()
+          let replStr = await redis.readLine()
+          check(replStr == "+PONG")
       except RedisConnectionError:
         echo "Can't connect to Redis instance"
         fail()
-      await pool.close()
+      await connection.close()
     waitFor(testConnection())

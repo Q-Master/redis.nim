@@ -30,27 +30,34 @@ suite "Redis commands":
       var connection = newRedis("localhost", 6379, 0, poolsize=2, timeout=5000)
       try:
         await connection.connect()
+        # PING [message] 
         let pingResp = await connection.ping()
         check(pingResp == "PONG")
         let echoResp = await connection.echo(PING_TEST_MSG)
         check(echoResp == PING_TEST_MSG)
         let pingRespWithString = await connection.ping(PING_TEST_MSG.option)
         check(pingRespWithString == PING_TEST_MSG)
+        # CLIENT GETNAME 
         var nameResp = await connection.clientGetName()
         check(nameResp.isSome != true)
+        # CLIENT SETNAME connection-name 
         var boolRepl: bool = await connection.clientSetName(TEST_USER_NAME)
         check(boolRepl == true)
         nameResp = await connection.clientGetName()
         check(nameResp.get("") == TEST_USER_NAME)
+        # CLIENT LIST [TYPE normal|master|replica|pubsub] [ID client-id [client-id ...]] 
         let clResponse: seq[ClientInfo] = await connection.clientList()
         check(clResponse[0].cmd == "client")
         check(clResponse.len >= 2)
+        # CLIENT INFO 
         let ciResponse: ClientInfo = await connection.clientInfo()
         check(ciResponse.cmd == "client")
+        # CLIENT GETREDIR 
         let redirResponse = await connection.clientGetRedir()
         check(redirResponse == -1)
         check(clResponse[0].redir == redirResponse)
         check(ciResponse.redir == redirResponse)
+        # CLIENT ID 
         let idResponse = await connection.clientID()
         check(idResponse == ciResponse.id)
       except RedisConnectionError:

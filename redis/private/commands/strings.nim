@@ -17,7 +17,7 @@ import ../exceptions
     *INCRBYFLOAT
     *MGET
     *MSET
-    MSETNX
+    *MSETNX
     PSETEX
     *SET
     SETEX
