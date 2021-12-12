@@ -24,7 +24,7 @@ import ../exceptions
 ]#
 
 type
-  RedisSRandPopRequestT* = ref object of RedisRequestT[Option[string]]
+  RedisSRandPopRequestT = ref object of RedisRequestT[Option[string]]
 
 # SADD key member [member ...]
 proc sAdd*(redis: Redis, key: string, members: varargs[string, `$`]): RedisRequestT[int64] =

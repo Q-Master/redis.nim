@@ -32,12 +32,11 @@ type
     INDEX_BEFORE = "BEFORE"
     INDEX_AFTER = "AFTER"
 
-  RedisListPosRequest* = ref RedisListPosRequestObj
-  RedisListPosRequestObj* = object of RedisRequestT[int64]
+  RedisListPosRequest = ref object of RedisRequestT[int64]
     rank: Option[string]
     maxLen: Option[string]
   
-  RedisListPosCountRequest* = ref object of RedisListPosRequest
+  RedisListPosCountRequest = ref object of RedisListPosRequest
     count: string
 
 proc newRedisListPosRequest(redis: Redis): RedisListPosRequest =

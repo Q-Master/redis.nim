@@ -22,9 +22,9 @@ import ./cmd
 ]#
 
 type
-  RandFieldRequestT* = ref object of RedisRequestT[Option[string]]
-  RandFieldRequestCountT* = ref object of RedisArrayRequestT[string]
-  RandFieldRequestCountWithValuesT* = ref object of RedisRequestT[Table[string, string]]
+  RandFieldRequestT = ref object of RedisRequestT[Option[string]]
+  RandFieldRequestCountT = ref object of RedisArrayRequestT[string]
+  RandFieldRequestCountWithValuesT = ref object of RedisRequestT[Table[string, string]]
 
 # HDEL key field [field ...] 
 proc hDel*(redis: Redis, key, field: string, fields: varargs[string, `$`]): RedisRequestT[int64] =

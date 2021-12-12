@@ -28,8 +28,7 @@ import ./cmd
 ]#
 
 type
-  RedisSortRequest* = ref RedisSortRequestObj
-  RedisSortRequestObj* = object of RedisRequestT[RedisStrBool]
+  RedisSortRequest = ref object of RedisRequestT[RedisStrBool]
     # [BY pattern] [LIMIT offset count] [GET pattern [GET pattern ...]] [ASC|DESC] [ALPHA] [STORE destination]
     by: Option[string]
     limit: Option[Slice[int]]
@@ -37,7 +36,7 @@ type
     sortOrder: RedisSortOrder
     alpha: bool
   
-  RedisSortStoreRequest* = ref object of RedisSortRequest
+  RedisSortStoreRequest = ref object of RedisSortRequest
     store: string
 
 proc newRedisSortRequest(redis: Redis): RedisSortRequest =

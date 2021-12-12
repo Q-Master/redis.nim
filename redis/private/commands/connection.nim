@@ -77,8 +77,6 @@ type
     redir*: int64
     user*: string
   
-  RedisClientInfoRequest* = ref object of RedisRequest
-
 # AUTH [username] password 
 proc auth*(redis: Redis, password: string, login: Option[string] = string.none): RedisRequestT[RedisStrBool] =
   result = newRedisRequest[RedisRequestT[RedisStrBool]](redis)

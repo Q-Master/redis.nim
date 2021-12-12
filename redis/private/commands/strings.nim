@@ -32,20 +32,19 @@ type
     REDIS_SET_NX
     REDIS_SET_XX
 
-  RedisGetExRequest* = ref object of RedisRequestT[Option[string]]
+  RedisGetExRequest = ref object of RedisRequestT[Option[string]]
     ex: bool
     px: bool
     persist: bool
 
-  RedisSetRequest* = ref RedisSetRequestObj
-  RedisSetRequestObj* = object of RedisRequestT[RedisStrBool]
+  RedisSetRequest = ref object of RedisRequestT[RedisStrBool]
     ex: bool
     px: bool
     keepttl: bool
     nx: bool
     xx: bool
   
-  RedisSetGetRequest* = ref object of RedisSetRequest
+  RedisSetGetRequest = ref object of RedisSetRequest
 
 proc newRedisGetExRequest(redis: Redis): RedisGetExRequest =
   result = newRedisRequest[RedisGetExRequest](redis)

@@ -35,6 +35,10 @@ proc newRedisRequest*[T: RedisRequest](redis: Redis): T =
   result.new
   result.initRedisRequest(redis)
 
+proc newFromRedisRequest*[T](req: RedisRequest): T =
+  result = newRedisRequest[T](req.redis)
+  result.req = req.req
+
 proc resetRedisCursor*[T: RedisCursorRequest](cursor: T) =
   cursor.exhausted = false
   cursor.req.arr[1] = 0.encodeRedis()
@@ -49,14 +53,36 @@ proc encodeCommand(cmd: string, args: varargs[RedisMessage, encodeRedis]): Redis
 
 proc add*[T: RedisRequest](req: T, data: RedisMessage): T {.discardable.} =
   result = req
-  if req.req.isNil():
-    req.req = RedisMessage(kind: REDIS_MESSAGE_ARRAY)
+  if result.req.isNil():
+    result.req = RedisMessage(kind: REDIS_MESSAGE_ARRAY)
   result.req.arr.add(data)
 
 proc add*[T: RedisRequest](req: T, data: varargs[RedisMessage, encodeRedis]): T {.discardable.} =
   result = req
   for x in data:
-    req.add(x)
+    result.add(x)
+
+proc insert*[T: RedisRequest](req: T, pos: Natural, data: varargs[RedisMessage, encodeRedis]): T {.discardable.} =
+  result = req
+  var i = pos
+  if req.req.isNil():
+    raise newException(RedisError, "Can't insert to an empty array")
+  if req.req.arr.len < pos:
+    req.add(data=data)
+  else:
+    for d in data:
+      req.req.arr.insert(d, i)
+      i.inc(1)
+
+proc extend*[T: RedisRequest, V](req: T, arr: openArray[V]): T {.discardable.} =
+  result = req
+  for elem in arr:
+    result.add(elem)
+
+proc extend*[T: RedisRequest, V, D](req: T, arr: openArray[V], conv: proc(x: V): D): T {.discardable.} =
+  result = req
+  for elem in arr:
+    result.add(conv(elem))
 
 proc addCmd*[T: RedisRequest](req: T, cmd: string, args: varargs[RedisMessage, encodeRedis]): T {.discardable.} =
   result = req
