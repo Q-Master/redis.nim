@@ -20,6 +20,7 @@ This table represents Redis features and their implementation status within
 
 ## Info
 Driver is not yet fully complete and tested, but seems working. Those commands marked not tested are implemented, but tests need to be written.
+Some code seems a bit "hacky" but working.
 
 ## Examples
 All the needed examples are almost self-explanatory in [commands.nim](tests/commands.nim)
