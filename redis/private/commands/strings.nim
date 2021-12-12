@@ -169,11 +169,10 @@ proc incrBy*(redis: Redis, key: string, num: float): RedisRequestT[RedisStrFloat
   result.addCmd("INCRBYFLOAT", key, $num)
 
 # MGET key [key ...] 
-proc mGet*(redis: Redis, key: string, keys: varargs[RedisMessage, encodeRedis]): RedisArrayRequestT[Option[string]] =
+proc mGet*(redis: Redis, key: string, keys: varargs[string]): RedisArrayRequestT[Option[string]] =
   result = newRedisRequest[RedisArrayRequestT[Option[string]]](redis)
   result.addCmd("MGET", key)
-  if keys.len > 0:
-    result.add(data = keys)
+  result.extend(keys)
 
 # MSET key value [key value ...] 
 proc mSet*[T](redis: Redis, keyValue: tuple[a: string, b: T], keyValues: varargs[tuple[a: string, b: T]]): RedisRequestT[RedisStrBool] =

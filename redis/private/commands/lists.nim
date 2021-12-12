@@ -57,16 +57,14 @@ proc blMove*(redis: Redis, timeout: Duration, srcKey: string, srcDirection: Redi
 proc blPop*(redis: Redis, timeout: Duration, key: string, keys: varargs[string]): RedisArrayRequestT[string] =
   result = newRedisRequest[RedisArrayRequestT[string]](redis)
   result.addCmd("BLPOP", key)
-  for elem in keys:
-    result.add(elem)
+  result.extend(keys)
   result.add(timeout.inSeconds)
 
 # BRPOP key [key ...] timeout 
 proc brPop*(redis: Redis, timeout: Duration, key: string, keys: varargs[string]): RedisArrayRequestT[string] =
   result = newRedisRequest[RedisArrayRequestT[string]](redis)
   result.addCmd("BRPOP", key)
-  for elem in keys:
-    result.add(elem)
+  result.extend(keys)
   result.add(timeout.inSeconds)
 
 # BRPOPLPUSH source destination timeout (deprecated since 6.2)
@@ -139,15 +137,13 @@ proc execute*(req: RedisListPosCountRequest): Future[seq[int64]] =
 proc lPush*(redis: Redis, key: string, elements: varargs[string, `$`]): RedisRequestT[int64] =
   result = newRedisRequest[RedisRequestT[int64]](redis)
   result.addCmd("LPUSH", key)
-  for element in elements:
-    result.add(element)
+  result.extend(elements)
 
 # LPUSHX key element [element ...] 
 proc lPushX*(redis: Redis, key: string, elements: varargs[string, `$`]): RedisRequestT[int64] =
   result = newRedisRequest[RedisRequestT[int64]](redis)
   result.addCmd("LPUSHX", key)
-  for element in elements:
-    result.add(element)
+  result.extend(elements)
 
 # LRANGE key start stop
 proc lRange*(redis: Redis, key: string, ranges: Slice[int]): RedisArrayRequestT[string] =
@@ -187,15 +183,13 @@ proc rPoplPush*(redis: Redis, srcKey, destKey: string): RedisRequestT[Option[str
 proc rPush*(redis: Redis, key: string, elements: varargs[string, `$`]): RedisRequestT[int64] =
   result = newRedisRequest[RedisRequestT[int64]](redis)
   result.addCmd("RPUSH", key)
-  for element in elements:
-    result.add(element)
+  result.extend(elements)
 
 # RPUSHX key element [element ...]
 proc rPushX*(redis: Redis, key: string, elements: varargs[string, `$`]): RedisRequestT[int64] =
   result = newRedisRequest[RedisRequestT[int64]](redis)
   result.addCmd("RPUSHX", key)
-  for element in elements:
-    result.add(element)
+  result.extend(elements)
 
 #------- pvt
 

@@ -64,18 +64,16 @@ proc copy*(redis: Redis, source, destination: string, db: int = -1, replace: boo
     result.add("REPLACE")
 
 # DEL key [key ...] 
-proc del*(redis: Redis, key: string, keys: varargs[RedisMessage, encodeRedis]): RedisRequestT[int64] =
+proc del*(redis: Redis, key: string, keys: varargs[string]): RedisRequestT[int64] =
   result = newRedisRequest[RedisRequestT[int64]](redis)
   result.addCmd("DEL", key)
-  if keys.len() > 0:
-    result.add(data = keys)
+  result.extend(keys)
 
 # EXISTS key [key ...] 
-proc exists*(redis: Redis, key: string, keys: varargs[RedisMessage, encodeRedis]): RedisRequestT[int64] =
+proc exists*(redis: Redis, key: string, keys: varargs[string]): RedisRequestT[int64] =
   result = newRedisRequest[RedisRequestT[int64]](redis)
   result.addCmd("EXISTS", key)
-  if keys.len() > 0:
-    result.add(data = keys)
+  result.extend(keys)
 
 # EXPIRE key seconds [NX|XX|GT|LT] 
 proc expire*(redis: Redis, key: string, timeout: Duration, expireType: RedisExpireType = REDIS_EXPIRE_NOT_SET): RedisRequestT[RedisIntBool] =
@@ -216,11 +214,10 @@ proc execute*(req: RedisSortStoreRequest): Future[int64] =
   result = cast[RedisRequestT[int64]](req).execute()
 
 # TOUCH key [key ...]
-proc touch*(redis: Redis, key: string, keys: varargs[RedisMessage, encodeRedis]): RedisRequestT[int64] =
+proc touch*(redis: Redis, key: string, keys: varargs[string]): RedisRequestT[int64] =
   result = newRedisRequest[RedisRequestT[int64]](redis)
   result.addCmd("TOUCH", key)
-  if keys.len > 0:
-    result.add(data = keys)
+  result.extend(keys)
 
 # TTL key 
 proc ttl*(redis: Redis, key: string): RedisRequestT[Duration] =
@@ -233,11 +230,10 @@ proc getType*(redis: Redis, key: string): RedisRequestT[Option[string]] =
   result.addCmd("TYPE", key)
 
 # UNLINK key [key ...]
-proc unlink*(redis: Redis, key: string, keys: varargs[RedisMessage, encodeRedis]): RedisRequestT[int64] =
+proc unlink*(redis: Redis, key: string, keys: varargs[string]): RedisRequestT[int64] =
   result = newRedisRequest[RedisRequestT[int64]](redis)
   result.addCmd("UNLINK", key)
-  if keys.len > 0:
-    result.add(data = keys)
+  result.extend(keys)
 
 #------- pvt
 

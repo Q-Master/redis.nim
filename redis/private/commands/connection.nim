@@ -132,8 +132,7 @@ proc clientList*(redis: Redis, clientType: ClientType = CLIENT_TYPE_ALL, clientI
     result.add("TYPE", $clientType)
   if clientIDs.len > 0:
     result.add("ID")
-    for id in clientIDs:
-      result.add(id)
+    result.extend(clientIDs)
 
 # CLIENT SETNAME connection-name 
 proc clientSetName*(redis: Redis, name: string): RedisRequestT[RedisStrBool] =

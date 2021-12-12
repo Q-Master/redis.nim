@@ -40,8 +40,7 @@ proc eval*[T](redis: Redis, sha1: SecureHash, ro: bool = false, keyArgs: varargs
 proc scriptExists*(redis: Redis, sha1: SecureHash, sha1s: varargs[SecureHash]): RedisArrayRequestT[RedisIntBool] =
   result = newRedisRequest[RedisArrayRequestT[RedisIntBool]](redis)
   result.addCmd("SCRIPT EXISTS", sha1)
-  for sha in sha1s:
-    result.add(sha)
+  result.extend(sha1s)
 
 # SCRIPT FLUSH [ASYNC|SYNC] 
 proc scriptFlush*(redis: Redis, async: bool = false): RedisRequestT[RedisStrBool] =

@@ -27,11 +27,10 @@ type
   RandFieldRequestCountWithValuesT = ref object of RedisRequestT[Table[string, string]]
 
 # HDEL key field [field ...] 
-proc hDel*(redis: Redis, key, field: string, fields: varargs[string, `$`]): RedisRequestT[int64] =
+proc hDel*(redis: Redis, key, field: string, fields: varargs[string]): RedisRequestT[int64] =
   result = newRedisRequest[RedisRequestT[int64]](redis)
   result.addCmd("HDEL", key, field)
-  for f in fields:
-    result.add(f)
+  result.extend(fields)
 
 # HEXISTS key field 
 proc hExists*(redis: Redis, key, field: string): RedisRequestT[RedisIntBool] =
@@ -74,11 +73,10 @@ proc hLen*(redis: Redis, key: string): RedisRequestT[int64] =
   result.addCmd("HLEN", key)
 
 # HMGET key field [field ...] 
-proc hmGet*(redis: Redis, key, field: string, fields: varargs[RedisMessage, encodeRedis]): RedisArrayRequestT[Option[string]] =
+proc hmGet*(redis: Redis, key, field: string, fields: varargs[string]): RedisArrayRequestT[Option[string]] =
   result = newRedisRequest[RedisArrayRequestT[Option[string]]](redis)
   result.addCmd("HMGET", key, field)
-  if fields.len > 0:
-    result.add(data = fields)
+  result.extend(fields)
 
 # HMSET key field value [field value ...] 
 proc hmSet*[T](redis: Redis, key: string, fieldValue: tuple[a: string, b: T], fieldValues: varargs[tuple[a: string, b: T]]): RedisRequestT[RedisStrBool] =
