@@ -44,7 +44,7 @@ suite "Redis commands":
         check(nameResp.get("") == TEST_USER_NAME)
         let clResponse: seq[ClientInfo] = await connection.clientList()
         check(clResponse[0].cmd == "client")
-        check(clResponse.len == 2)
+        check(clResponse.len >= 2)
         let ciResponse: ClientInfo = await connection.clientInfo()
         check(ciResponse.cmd == "client")
         let redirResponse = await connection.clientGetRedir()
@@ -52,7 +52,6 @@ suite "Redis commands":
         check(clResponse[0].redir == redirResponse)
         check(ciResponse.redir == redirResponse)
         let idResponse = await connection.clientID()
-        check(idResponse == clResponse[0].id)
         check(idResponse == ciResponse.id)
       except RedisConnectionError:
         echo "Can't connect to Redis instance"
@@ -444,13 +443,8 @@ suite "Redis commands":
         var boolRepl: bool
         var optStrRepl: Option[string]
         var intRepl: int64
-        var floatRepl: float
-        var optIntRepl: Option[int64]
-        var intReplArray: seq[int64]
         var strReplArray: seq[string]
         var boolReplArray: seq[bool]
-        var optStrReplArray: seq[Option[string]]
-        var tableRepl: Table[string, string]
         await connection.connect()
         # SADD key member [member ...]
         intRepl = await connection.sAdd(KEY1, 1, 2, 3, "4", 4)
@@ -512,7 +506,13 @@ suite "Redis commands":
         optStrRepl = await connection.sRandMember(KEY1)
         check(optStrRepl in @["1".option, "2".option, "3".option])
         strReplArray = await connection.sRandMember(KEY1).count(2)
-        check(strReplArray == @["1", "2"] or strReplArray == @["1", "3"] or strReplArray == @["2", "3"])
+        check(strReplArray == @["1", "2"] or
+          strReplArray == @["1", "3"] or
+          strReplArray == @["2", "3"] or
+          strReplArray == @["3", "2"] or
+          strReplArray == @["3", "1"] or
+          strReplArray == @["2", "1"]
+          )
         # SREM key member [member ...] 
         intRepl = await connection.sRem(KEY1, "1", "2", "NotAMember")
         check(intRepl == 2)
@@ -535,6 +535,263 @@ suite "Redis commands":
       await connection.close()
     waitFor(testSets())
 
+  test "Sorted sets commands":
+    proc testSortedSets() {.async.} =
+      var connection = newRedis("localhost", 6379, 0, poolsize=2, timeout=5000)
+      try:
+        var optStrRepl: Option[string]
+        var intRepl: int64
+        var optIntRepl: Option[int64]
+        var floatRepl: float
+        var optFloatRepl: Option[float]
+        var strReplArray: seq[string]
+        var zSetReplArray: seq[ZSetValue[float]]
+        var optFloatReplArray: seq[Option[float]]
+        await connection.connect()
+        # ZADD key [NX|XX] [GT|LT] [CH] [INCR] score member [score member ...]
+        intRepl = await connection.del(KEY1)
+        intRepl = await connection.zAdd(KEY1, ("a", 1), ("b", 2))
+        check(intRepl == 2)
+        intRepl = await connection.zAdd(KEY1, ("a", 2)).ch()
+        check(intRepl == 1)
+        intRepl = await connection.zAdd(KEY1, ("a", 7)).xx()
+        check(intRepl == 0)
+        intRepl = await connection.zAdd(KEY1, ("a", 2)).nx()
+        check(intRepl == 0)
+        intRepl = await connection.zAdd(KEY1, ("c", 3)).nx()
+        check(intRepl == 1)
+        floatRepl = await connection.zAddIncr(KEY1, ("a", 3))
+        check(floatRepl == 10.0)
+        intRepl = await connection.zAdd(KEY1, ("a", 2)).lt().ch()
+        check(intRepl == 1)
+        intRepl = await connection.zAdd(KEY1, ("b", 7)).lt().ch()
+        check(intRepl == 0)
+        intRepl = await connection.zAdd(KEY1, ("a", 10)).gt().ch()
+        check(intRepl == 1)
+        intRepl = await connection.zAdd(KEY1, ("b", 1)).gt().ch()
+        check(intRepl == 0)
+        # ZRANGE key min max [BYSCORE|BYLEX] [REV] [LIMIT offset count] [WITHSCORES] 
+        strReplArray = await connection.zRange(KEY1, (0 .. -1))
+        check(strReplArray == @["b", "c", "a"])
+        strReplArray = await connection.zRange(KEY1, (0 .. -1)).rev()
+        check(strReplArray == @["a", "c", "b"])
+        zSetReplArray = await connection.zRange(KEY1, (0 .. -1)).rev().withScores()
+        check(zSetReplArray == @[("a", 10.0), ("c", 3.0), ("b", 2.0)])
+        zSetReplArray = await connection.zRange(KEY1, (0 .. 100)).byScore().limit(1, 1).withScores()
+        check(zSetReplArray == @[("c", 3.0)])
+        # ZRANGESTORE dst src min max [BYSCORE|BYLEX] [REV] [LIMIT offset count] 
+        intRepl = await connection.zRangeStore(KEY4, KEY1, (0 .. -1))
+        check(intRepl == 3)
+        strReplArray = await connection.zRange(KEY4, (0 .. -1))
+        check(strReplArray == @["b", "c", "a"])
+        intRepl = await connection.del(KEY4)
+        # ZCARD key 
+        intRepl = await connection.zCard(KEY1)
+        check(intRepl == 3)
+        # ZCOUNT key min max 
+        intRepl = await connection.zCount(KEY1, (0 .. 3))
+        check(intRepl == 2)
+        # ZINCRBY key increment member 
+        floatRepl = await connection.zIncrBy(KEY1, "a", 1.5)
+        check(floatRepl == 11.5)
+        # ZINTER numkeys key [key ...] [WEIGHTS weight [weight ...]] [AGGREGATE SUM|MIN|MAX] [WITHSCORES] 
+        intRepl = await connection.del(KEY1, KEY2, KEY3, KEY4)
+        intRepl = await connection.zAdd(KEY1, ("a", 1), ("b", 2))
+        intRepl = await connection.zAdd(KEY2, ("a", 1), ("b", 2), ("c", 3))
+        intRepl = await connection.zAdd(KEY3, ("a", 1), ("b", 2), ("d", 3))
+        strReplArray = await connection.zInter(KEY1, KEY2, KEY3)
+        check(strReplArray == @["a", "b"])
+        strReplArray = await connection.zInter(KEY1, KEY2, KEY3).weights(1, 1, 2)
+        check(strReplArray == @["a", "b"])
+        zSetReplArray = await connection.zInter(KEY1, KEY2, KEY3).weights(1, 1, 2).withScores()
+        check(zSetReplArray == @[("a", 4.0), ("b", 8.0)])
+        # ZINTERSTORE destination numkeys key [key ...] [WEIGHTS weight [weight ...]] [AGGREGATE SUM|MIN|MAX] 
+        intRepl = await connection.del(KEY4)
+        intRepl = await connection.zInterStore(KEY4, KEY1, KEY2, KEY3)
+        check(intRepl == 2)
+        zSetReplArray = await connection.zRange(KEY4, (0 .. -1)).withScores()
+        check(zSetReplArray == @[("a", 3.0), ("b", 6.0)])
+        intRepl = await connection.zInterStore(KEY4, KEY1, KEY2, KEY3).weights(1, 1, 2)
+        check(intRepl == 2)
+        zSetReplArray = await connection.zRange(KEY4, (0 .. -1)).withScores()
+        check(zSetReplArray == @[("a", 4.0), ("b", 8.0)])
+        # ZLEXCOUNT key min max 
+        intRepl = await connection.del(KEY1, KEY2, KEY3, KEY4)
+        intRepl = await connection.zAdd(KEY1, ("a", 0), ("b", 0), ("c", 0), ("d", 0), ("e", 0), ("f", 0), ("g", 0))
+        intRepl = await connection.zLexCount(KEY1, ("-" .. "+"))
+        check(intRepl == 7)
+        intRepl = await connection.zLexCount(KEY1, ("[b" .. "[f"))
+        check(intRepl == 5)
+        # ZMSCORE key member [member ...] 
+        intRepl = await connection.del(KEY1, KEY2, KEY3, KEY4)
+        intRepl = await connection.zAdd(KEY1, ("a", 1), ("b", 2))
+        optFloatReplArray = await connection.zmScore(KEY1, "a", "b", "noKey")
+        check(optFloatReplArray == @[option(1.0), option(2.0), float.none])
+        # ZPOPMAX key [count] 
+        intRepl = await connection.del(KEY1, KEY2, KEY3, KEY4)
+        intRepl = await connection.zAdd(KEY1, ("a", 1), ("b", 2), ("c", 3), ("d", 4))
+        zSetReplArray = await connection.zPopMax(KEY1)
+        check(zSetReplArray == @[("d", 4.0)])
+        zSetReplArray = await connection.zPopMax(KEY1, 2)
+        check(zSetReplArray == @[("c", 3.0), ("b", 2.0)])
+        # ZPOPMIN key [count] 
+        intRepl = await connection.del(KEY1, KEY2, KEY3, KEY4)
+        intRepl = await connection.zAdd(KEY1, ("a", 1), ("b", 2), ("c", 3), ("d", 4))
+        zSetReplArray = await connection.zPopMin(KEY1)
+        check(zSetReplArray == @[("a", 1.0)])
+        zSetReplArray = await connection.zPopMin(KEY1, 2)
+        check(zSetReplArray == @[("b", 2.0), ("c", 3.0)])
+        # ZRANDMEMBER key [count [WITHSCORES]] 
+        intRepl = await connection.del(KEY1)
+        intRepl = await connection.zAdd(KEY1, ("a", 1), ("b", 2), ("c", 3), ("d", 4))
+        optStrRepl = await connection.zRandMember(KEY1)
+        check(optStrRepl.isSome)
+        check(optStrRepl in @["a".option, "b".option, "c".option, "d".option])
+        optStrRepl = await connection.zRandMember(KEY2)
+        check(optStrRepl.isNone)
+        strReplArray = await connection.zRandMember(KEY1, 3)
+        check(strReplArray.len == 3)
+        strReplArray = await connection.zRandMember(KEY1, 10)
+        check(strReplArray.len == 4)
+        strReplArray = await connection.zRandMember(KEY1, -3)
+        check(strReplArray.len == 3)
+        strReplArray = await connection.zRandMember(KEY1, -10)
+        check(strReplArray.len == 10)
+        zSetReplArray = await connection.zRandMember(KEY1, 2).withScores()
+        check(zSetReplArray.len == 2)
+        # ZRANGEBYLEX key min max [LIMIT offset count] 
+        intRepl = await connection.del(KEY1)
+        intRepl = await connection.zAdd(KEY1, ("a", 0), ("b", 0), ("c", 0), ("d", 0), ("e", 0), ("f", 0), ("g", 0))
+        strReplArray = await connection.zRangeByLex(KEY1, ("-" .. "[c"))
+        check(strReplArray == @["a", "b", "c"])
+        strReplArray = await connection.zRangeByLex(KEY1, ("-" .. "(c"))
+        check(strReplArray == @["a", "b"])
+        strReplArray = await connection.zRangeByLex(KEY1, ("[aaa" .. "(g")).limit(1, 3)
+        check(strReplArray == @["c", "d", "e"])
+        # ZRANGEBYSCORE key min max [WITHSCORES] [LIMIT offset count]
+        intRepl = await connection.del(KEY1)
+        intRepl = await connection.zAdd(KEY1, ("a", 1), ("b", 2), ("c", 3))
+        strReplArray = await connection.zRangeByScore(KEY1, (-Inf .. +Inf))
+        check(strReplArray == @["a", "b", "c"])
+        strReplArray = await connection.zRangeByScore(KEY1, (1 .. 2))
+        check(strReplArray == @["a", "b"])
+        strReplArray = await connection.zRangeByScore(KEY1, ("(1" .. "2"))
+        check(strReplArray == @["b"])
+        zSetReplArray = await connection.zRangeByScore(KEY1, (1 .. 2)).withScores()
+        check(zSetReplArray == @[("a", 1.0), ("b", 2.0)])
+        # ZRANK key member 
+        optIntRepl = await connection.zRank(KEY1, "b")
+        check(optIntRepl == 1.int64.option)
+        optIntRepl = await connection.zRank(KEY1, "z")
+        check(optIntRepl.isNone)
+        # ZREM key member [member ...] 
+        intRepl = await connection.zRem(KEY1, "a", "b")
+        check(intRepl == 2)
+        strReplArray = await connection.zRange(KEY1, (0 .. -1))
+        check(strReplArray == @["c"])
+        # ZREMRANGEBYLEX key min max 
+        intRepl = await connection.del(KEY1)
+        intRepl = await connection.zAdd(KEY1, ("aaaa", 0), ("b", 0), ("c", 0), ("d", 0), ("e", 0), ("foo", 0), ("zap", 0), ("zip", 0), ("ALPHA", 0), ("alpha", 0))
+        intRepl = await connection.zRemRangeByLex(KEY1, ("[alpha" .. "[omega"))
+        check(intRepl == 6)
+        strReplArray = await connection.zRange(KEY1, (0 .. -1))
+        check(strReplArray == @["ALPHA", "aaaa", "zap", "zip"])
+        # ZREMRANGEBYRANK key start stop 
+        intRepl = await connection.del(KEY1)
+        intRepl = await connection.zAdd(KEY1, ("a", 1), ("b", 2), ("c", 3))
+        intRepl = await connection.zRemRangeByRank(KEY1, (0 .. 1))
+        check(intRepl == 2)
+        zSetReplArray = await connection.zRange(KEY1, (0 .. -1)).withScores()
+        check(zSetReplArray == @[("c", 3.0)])
+        # ZREMRANGEBYSCORE key min max 
+        intRepl = await connection.del(KEY1)
+        intRepl = await connection.zAdd(KEY1, ("a", 1), ("b", 2), ("c", 3))
+        intRepl = await connection.zRemRangeByScore(KEY1, ("-inf" .. "(2"))
+        check(intRepl == 1)
+        zSetReplArray = await connection.zRange(KEY1, (0 .. -1)).withScores()
+        check(zSetReplArray == @[("b", 2.0), ("c", 3.0)])
+        # ZREVRANGE key start stop [WITHSCORES] 
+        intRepl = await connection.del(KEY1)
+        intRepl = await connection.zAdd(KEY1, ("a", 1), ("b", 2), ("c", 3))
+        strReplArray = await connection.zRevRange(KEY1, (0 .. -1))
+        check(strReplArray == @["c", "b", "a"])
+        zSetReplArray = await connection.zRevRange(KEY1, (0 .. -1)).withScores()
+        check(zSetReplArray == @[("c", 3.0), ("b", 2.0), ("a", 1.0)])
+        # ZREVRANGEBYLEX key max min [LIMIT offset count] 
+        intRepl = await connection.del(KEY1)
+        intRepl = await connection.zAdd(KEY1, ("a", 0), ("b", 0), ("c", 0), ("d", 0), ("e", 0), ("f", 0), ("g", 0))
+        strReplArray = await connection.zRevRangeByLex(KEY1, ("[c" .. "-"))
+        check(strReplArray == @["c", "b", "a"])
+        strReplArray = await connection.zRevRangeByLex(KEY1, ("(g" .. "[aaa")).limit(1, 3)
+        check(strReplArray == @["e", "d", "c"])
+        # ZREVRANGEBYSCORE key max min [LIMIT offset count] [WITHSCORES]
+        intRepl = await connection.del(KEY1)
+        intRepl = await connection.zAdd(KEY1, ("a", 1), ("b", 2), ("c", 3))
+        strReplArray = await connection.zRevRangeByScore(KEY1, ("+inf" .. "-inf"))
+        check(strReplArray == @["c", "b", "a"])
+        strReplArray = await connection.zRevRangeByScore(KEY1, (2 .. 1))
+        check(strReplArray == @["b", "a"])
+        strReplArray = await connection.zRevRangeByScore(KEY1, ("+inf" .. "-inf")).limit(1, 1)
+        check(strReplArray == @["b"])
+        zSetReplArray = await connection.zRevRangeByScore(KEY1, (2 .. 1)).withScores()
+        check(zSetReplArray == @[("b", 2.0), ("a", 1.0)])
+        # ZREVRANK key member 
+        intRepl = await connection.del(KEY1)
+        intRepl = await connection.zAdd(KEY1, ("a", 1), ("b", 2), ("c", 3))
+        optIntRepl = await connection.zRevRank(KEY1, "a")
+        check(optIntRepl == 2'i64.option)
+        optIntRepl = await connection.zRevRank(KEY1, "z")
+        check(optIntRepl.isNone)
+        # ZSCORE key member 
+        intRepl = await connection.del(KEY1)
+        intRepl = await connection.zAdd(KEY1, ("a", 1), ("b", 2), ("c", 3))
+        optFloatRepl = await connection.zScore(KEY1, "a")
+        check(optFloatRepl == 1.0.option)
+        optFloatRepl = await connection.zScore(KEY1, "z")
+        check(optFloatRepl.isNone)
+        # ZDIFF numkeys key [key ...] [WITHSCORES] 
+        intRepl = await connection.del(KEY1, KEY2)
+        intRepl = await connection.zAdd(KEY1, ("a", 1), ("b", 2), ("c", 3))
+        intRepl = await connection.zAdd(KEY2, ("a", 1), ("b", 2))
+        strReplArray = await connection.zDiff(KEY1, KEY2)
+        check(strReplArray == @["c"])
+        zSetReplArray = await connection.zDiff(KEY1, KEY2).withScores()
+        check(zSetReplArray == @[("c", 3.0)])
+        # ZDIFFSTORE destination numkeys key [key ...] 
+        intRepl = await connection.del(KEY1, KEY2, KEY3)
+        intRepl = await connection.zAdd(KEY1, ("a", 1), ("b", 2), ("c", 3))
+        intRepl = await connection.zAdd(KEY2, ("a", 1), ("b", 2))
+        intRepl = await connection.zDiffStore(KEY3, KEY1, KEY2)
+        check(intRepl == 1)
+        strReplArray = await connection.zRange(KEY3, (0 .. -1))
+        check(strReplArray == @["c"])
+        # ZUNION numkeys key [key ...] [WEIGHTS weight [weight ...]] [AGGREGATE SUM|MIN|MAX] [WITHSCORES] 
+        intRepl = await connection.del(KEY1, KEY2, KEY3)
+        intRepl = await connection.zAdd(KEY1, ("a", 1), ("b", 2))
+        intRepl = await connection.zAdd(KEY2, ("a", 1), ("b", 2), ("c", 3))
+        strReplArray = await connection.zUnion(KEY1, KEY2)
+        check(strReplArray == @["a", "c", "b"])
+        zSetReplArray = await connection.zUnion(KEY1, KEY2).withScores()
+        check(zSetReplArray == @[("a", 2.0), ("c", 3.0), ("b", 4.0)])
+        zSetReplArray = await connection.zUnion(KEY1, KEY2).weights(1, 2).withScores()
+        check(zSetReplArray == @[("a", 3.0), ("b", 6.0), ("c", 6.0)])
+        # ZUNIONSTORE destination numkeys key [key ...] [WEIGHTS weight [weight ...]] [AGGREGATE SUM|MIN|MAX] 
+        intRepl = await connection.del(KEY1, KEY2, KEY3)
+        intRepl = await connection.zAdd(KEY1, ("a", 1), ("b", 2))
+        intRepl = await connection.zAdd(KEY2, ("a", 1), ("b", 2), ("c", 3))
+        intRepl = await connection.zUinonStore(KEY3, KEY1, KEY2)
+        check(intRepl == 3)
+        zSetReplArray = await connection.zRange(KEY3, (0 .. -1)).withScores()
+        check(zSetReplArray == @[("a", 2.0), ("c", 3.0), ("b", 4.0)])
+        intRepl = await connection.zUinonStore(KEY3, KEY1, KEY2).weights(2, 3)
+        check(intRepl == 3)
+        zSetReplArray = await connection.zRange(KEY3, (0 .. -1)).withScores()
+        check(zSetReplArray == @[("a", 5.0), ("c", 9.0), ("b", 10.0)])
+      except RedisConnectionError:
+        echo "Can't connect to Redis instance"
+        fail()
+      await connection.close()
+    waitFor(testSortedSets())
 #[
         let expTime = now()+2.seconds+500.milliseconds
         replGet = await connection.getEx("KEY1").ex(initDuration(seconds=60)).execute()

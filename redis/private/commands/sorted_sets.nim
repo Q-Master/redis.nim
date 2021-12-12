@@ -6,51 +6,54 @@ import ../exceptions
   Block of sorted sets commands
     BZPOPMAX
     BZPOPMIN
-    ZADD
-    ZCARD
-    ZCOUNT
-    ZDIFF
-    ZDIFFSTORE
-    ZINCRBY
-    ZINTER
+    *ZADD
+    *ZCARD
+    *ZCOUNT
+    *ZDIFF
+    *ZDIFFSTORE
+    *ZINCRBY
+    *ZINTER
     ZINTERCARD
-    ZINTERSTORE
-    ZLEXCOUNT
-    ZMSCORE
-    ZPOPMAX
-    ZPOPMIN
-    ZRANDMEMBER
-    ZRANGE
-    ZRANGEBYLEX
-    ZRANGEBYSCORE
-    ZRANGESTORE
-    ZRANK
-    ZREM
-    ZREMRANGEBYLEX
-    ZREMRANGEBYRANK
-    ZREMRANGEBYSCORE
-    ZREVRANGE
-    ZREVRANGEBYLEX
-    ZREVRANGEBYSCORE
-    ZREVRANK
+    *ZINTERSTORE
+    *ZLEXCOUNT
+    *ZMSCORE
+    *ZPOPMAX
+    *ZPOPMIN
+    *ZRANDMEMBER
+    *ZRANGE
+    *ZRANGEBYLEX
+    *ZRANGEBYSCORE
+    *ZRANGESTORE
+    *ZRANK
+    *ZREM
+    *ZREMRANGEBYLEX
+    *ZREMRANGEBYRANK
+    *ZREMRANGEBYSCORE
+    *ZREVRANGE
+    *ZREVRANGEBYLEX
+    *ZREVRANGEBYSCORE
+    *ZREVRANK
     ZSCAN
-    ZSCORE
-    ZUNION
-    ZUNIONSTORE
+    *ZSCORE
+    *ZUNION
+    *ZUNIONSTORE
 ]#
 
 type
-  ZSetValue* = ref ZSetValueObj
-  ZSetValueObj* = ref object of RootObj
-    value*: string
-    score*: float
+  ZSetValue*[T: SomeInteger | SomeFloat] = tuple[name: string, score: T]
+  ZSetSlice* = Slice[string]
   
-  RedisZAddRequest* = ref object of RedisRequestT[int64]
+  RedisZAddRequest = ref object of RedisRequestT[int64]
     nx: bool
     xx: bool
     gt: bool
     lt: bool
-  RedisZAddRequestIncr* = ref object of RedisZAddRequest
+    ch: bool
+
+  RedisZAddIncrRequest = ref object of RedisRequestT[RedisStrFloat]
+    gt: bool
+    lt: bool
+    ch: bool
 
   RedisAggregateType* = enum
     NONE = "NONE"
@@ -58,103 +61,137 @@ type
     MIN = "MIN"
     MAX = "MAX"
   
-  ZSetLimit* = ref object of RootObj
-    offset*: int
-    count*: int
+  RedisZIURequest = ref object of RedisArrayRequestT[string]
+    keysN: int
+    aggregate: RedisAggregateType
+  
+  RedisZIUWithScoresRequest = ref object of RedisArrayRequestT[ZSetValue[float]]
+    keysN: int
+    aggregate: RedisAggregateType
+  
+  RedisZIUWithStoreRequest = ref object of RedisRequestT[int64]
+    keysN: int
+    aggregate: RedisAggregateType
+  
+  RedisZRangeRequest = ref object of RedisArrayRequestT[string]
+  RedisZRangeBLRequest = ref object of RedisArrayRequestT[string]
+  RedisZRangeBSRequest = ref object of RedisArrayRequestT[string]
+  RedisZEnableWithScoresRequest = ref object of RedisArrayRequestT[string]
+  RedisZRangeStoreRequest = ref object of RedisRequestT[int64]
+  RedisWithScoresRequest = ref object of RedisArrayRequestT[ZSetValue[float]]
 
-proc newZSetValue*(value: string, score: SomeFloat): ZSetValue =
-  result.new
-  result.value = value
-  result.score = score.float
+proc checkInter(inter: string): bool {.inline.}
 
-proc newZSetLimit*(offset: int, count: int): ZSetLimit =
-  result.new
-  result.offset = offset
-  result.count = count
+proc newRedisZAddRequest(redis: Redis): RedisZAddRequest =
+  result = newRedisRequest[RedisZAddRequest](redis)
+  result.nx = false
+  result.xx = false
+  result.gt = false
+  result.lt = false
+  result.ch = false
 
-proc newRedisZAddRequest(redis: Redis): RedisZAddRequest
-proc addRev(req: RedisRequest, rev: bool) {.inline.}
-proc addLimit(req: RedisRequest, limit: ZSetLimit) {.inline.}
-proc addWeights[T: SomeInteger | SomeFloat](req: RedisRequest, weights: seq[T]) {.inline.}
+proc newRedisZAddIncrRequest(redis: Redis): RedisZAddIncrRequest =
+  result = newRedisRequest[RedisZAddIncrRequest](redis)
+  result.gt = false
+  result.lt = false
+  result.ch = false
+
+proc newRedisZIURequest(redis: Redis): RedisZIURequest =
+  result = newRedisRequest[RedisZIURequest](redis)
+  result.aggregate = NONE
+  result.keysN = 0
+
+proc newRedisZIUWithScoresRequest[T: RedisZIURequest](req: T): RedisZIUWithScoresRequest =
+  result = newFromRedisRequest[RedisZIUWithScoresRequest](req)
+  result.aggregate = req.aggregate
+  result.keysN = req.keysN
+
+proc newRedisZIUWithStoreRequest(redis: Redis): RedisZIUWithStoreRequest =
+  result = newRedisRequest[RedisZIUWithStoreRequest](redis)
+  result.aggregate = NONE
+  result.keysN = 0
+
+proc toString(x: SomeInteger | SomeFloat): string = $x
+
+proc fromRedisReq*(_: type[tuple[key: string, value: ZSetValue[float]]], req: RedisMessage): seq[tuple[key: string, value: ZSetValue[float]]]
+proc fromRedisReq*(_: type[seq[ZSetValue[float]]], req: RedisMessage): seq[ZSetValue[float]]
+proc withScores*[T: RedisZRangeRequest | RedisZRangeBLRequest | RedisZRangeBSRequest | RedisZEnableWithScoresRequest](req: T): RedisWithScoresRequest
 
 # BZPOPMAX key [key ...] timeout
-proc bzPopMax*(redis: Redis, timeout: Duration, key: string, keys=varargs[string]): RedisArrayRequestT[tuple[key: string, value: ZSetValue]] =
-  result = newRedisRequest[RedisArrayRequestT[tuple[key: string, value: ZSetValue]]](redis)
+proc bzPopMax*(redis: Redis, timeout: Duration, key: string, keys=varargs[string]): RedisArrayRequestT[tuple[key: string, value: ZSetValue[float]]] =
+  result = newRedisRequest[RedisArrayRequestT[tuple[key: string, value: ZSetValue[float]]]](redis)
   result.addCmd("BZPOPMAX", key)
-  for k in keys:
-    result.add(k)
+  result.extend(keys)
   let floatTimeout = (timeout.inMilliseconds.toBiggestFloat())/1000.0
   result.add(floatTimeout)
 
-proc fromRedisReq*(_: type[tuple[key: string, value: ZSetValue]], req: RedisMessage): seq[tuple[key: string, value: ZSetValue]] =
-  result = @[]
-  if req.kind != REDIS_MESSAGE_NIL:
-    for i in countup(0, req.arr.len-3, 3):
-      let val = (req.arr[i].str.get(), newZSetValue(req.arr[i+1].str.get(), req.arr[i+2].str.get().parseFloat()))
-      result.add(val)
-
 # BZPOPMIN key [key ...] timeout 
-proc bzPopMin*(redis: Redis, timeout: Duration, key: string, keys=varargs[string]): RedisArrayRequestT[tuple[key: string, value: ZSetValue]] =
-  result = newRedisRequest[RedisArrayRequestT[tuple[key: string, value: ZSetValue]]](redis)
+proc bzPopMin*(redis: Redis, timeout: Duration, key: string, keys=varargs[string]): RedisArrayRequestT[tuple[key: string, value: ZSetValue[float]]] =
+  result = newRedisRequest[RedisArrayRequestT[tuple[key: string, value: ZSetValue[float]]]](redis)
   result.addCmd("BZPOPMIN", key)
-  for k in keys:
-    result.add(k)
+  result.extend(keys)
   let floatTimeout = (timeout.inMilliseconds.toBiggestFloat())/1000.0
   result.add(floatTimeout)
 
 # ZADD key [NX|XX] [GT|LT] [CH] [INCR] score member [score member ...]
-proc zAdd*(redis: Redis, key: string, member: ZSetValue, members: varargs[ZSetValue]): RedisZAddRequest =
+proc zAdd*[T: SomeInteger | SomeFloat](redis: Redis, key: string, member: ZSetValue[T], members: varargs[ZSetValue[T]]): RedisZAddRequest =
   result = newRedisZAddRequest(redis)
-  result.addCmd("ZADD", key, " ", " ", " ", member.value, member.value)
+  result.addCmd("ZADD", key, $member.score, member.name)
   for memb in members:
-    result.add(memb.score, memb.value)
+    result.add($memb.score, memb.name)
 
-proc zAddIncr*(redis: Redis, key: string, member: ZSetValue): RedisZAddRequestIncr =
-  result = cast[RedisZAddRequestIncr](newRedisZAddRequest(redis))
-  result.addCmd("ZADD", key, " ", " ", " ", "INCR", member.value, member.value)
+proc zAddIncr*[T: SomeInteger | SomeFloat](redis: Redis, key: string, member: ZSetValue[T]): RedisZAddIncrRequest =
+  result = newRedisZAddIncrRequest(redis)
+  result.addCmd("ZADD", key, "INCR", $member.score, member.name)
 
-proc lt*[T: RedisZAddRequest](req: T, t: Duration): T =
+proc lt*[T: RedisZAddRequest | RedisZAddIncrRequest](req: T): T =
   result = req
   if result.gt:
-    raise newException(RedisConnectionError, "Conflicting options for ZADD GT vs LT")
+    raise newException(RedisCommandError, "Conflicting options for ZADD GT vs LT")
+  if result.nx:
+    raise newException(RedisCommandError, "Conflicting options for ZADD NX vs LT")
+  if result.lt:
+    raise newException(RedisCommandError, "LT already set")
   result.lt = true
-  result.req.arr[3] = "LT".encodeRedis()
+  result.insert(2, "LT")
 
-proc gt*[T: RedisZAddRequest](req: T, t: Duration): T =
+proc gt*[T: RedisZAddRequest | RedisZAddIncrRequest](req: T): T =
   result = req
   if result.lt:
-    raise newException(RedisConnectionError, "Conflicting options for ZADD LT vs GT")
+    raise newException(RedisCommandError, "Conflicting options for ZADD LT vs GT")
+  if result.nx:
+    raise newException(RedisCommandError, "Conflicting options for ZADD NX vs GT")
+  if result.gt:
+    raise newException(RedisCommandError, "GT already set")
   result.gt = true
-  result.req.arr[3] = "GT".encodeRedis()
+  result.insert(2, "GT")
 
-proc nx*[T: RedisZAddRequest](req: T): T =
+proc ch*[T: RedisZAddRequest | RedisZAddIncrRequest](req: T): T =
+  result = req
+  if result.ch:
+    raise newException(RedisCommandError, "CH already set")
+  result.ch = true
+  result.insert(2, "CH")
+
+proc nx*(req: RedisZAddRequest): RedisZAddRequest =
   result = req
   if result.xx:
-    raise newException(RedisConnectionError, "Conflicting options for ZADD XX vs NX")
+    raise newException(RedisCommandError, "Conflicting options for ZADD XX vs NX")
+  if result.lt or result.gt:
+    raise newException(RedisCommandError, "Conflicting options for ZADD LT,GT vs NX")
+  if result.nx:
+    raise newException(RedisCommandError, "NX already set")
   result.nx = true
-  result.req.arr[2] = "NX".encodeRedis()
+  result.insert(2, "NX")
 
-proc xx*[T: RedisZAddRequest](req: T): T =
+proc xx*(req: RedisZAddRequest): RedisZAddRequest =
   result = req
   if result.nx:
-    raise newException(RedisConnectionError, "Conflicting options for ZADD NX vs XX")
+    raise newException(RedisCommandError, "Conflicting options for ZADD NX vs XX")
+  if result.xx:
+    raise newException(RedisCommandError, "XX already set")
   result.xx = true
-  result.req.arr[2] = "XX".encodeRedis()
-
-proc ch*[T: RedisZAddRequest](req: T): T =
-  result = req
-  result.req.arr[4] = "CH".encodeRedis()
-
-proc execute*(req: RedisZAddRequest): Future[int64] {.async.} =
-  let res = await cast[RedisRequest](req).execute()
-  result = res.integer
-
-proc execute*(req: RedisZAddRequestIncr): Future[Option[float]] {.async.} =
-  let res = await cast[RedisRequest](req).execute()
-  if res.str.isSome:
-    result = res.str.get().parseFloat().option
-  else:
-    result = float.none
+  result.insert(2, "XX")
 
 # ZCARD key 
 proc zCard*(redis: Redis, key: string): RedisRequestT[int64] =
@@ -162,212 +199,164 @@ proc zCard*(redis: Redis, key: string): RedisRequestT[int64] =
   result.addCmd("ZCARD", key)
 
 # ZCOUNT key min max 
-proc zCount*(redis: Redis, ranges: Slice[float]): RedisRequestT[int64] =
+proc zCount*[T: SomeInteger | SomeFloat](redis: Redis, key: string, ranges: Slice[T]): RedisRequestT[int64] =
   result = newRedisRequest[RedisRequestT[int64]](redis)
-  result.addCmd("ZCOUNT", ranges.a, ranges.b)
+  result.addCmd("ZCOUNT", key, $ranges.a, $ranges.b)
 
 # ZDIFF numkeys key [key ...] [WITHSCORES] 
-proc zDiff*(redis: Redis, key: string, keys: varargs[string]): RedisArrayRequestT[string] =
-  result = newRedisRequest[RedisArrayRequestT[string]](redis)
+proc zDiff*(redis: Redis, key: string, keys: varargs[string]): RedisZEnableWithScoresRequest =
+  result = newRedisRequest[RedisZEnableWithScoresRequest](redis)
   let keysAmount: int = 1+keys.len
-  result.addCmd("ZDIFF", keysAmount, key)
-  for k in keys:
-    result.add(k)
-
-proc zDiffWithScores*(redis: Redis, key: string, keys: varargs[string]): RedisArrayRequestT[ZSetValue] =
-  result = cast[RedisArrayRequestT[ZSetValue]](redis.zDiff(key, keys))
-  result.add("WITHSCORES")
-
-proc fromRedisReq*(_: type[RedisArrayRequestT[ZSetValue]], req: RedisMessage): seq[ZSetValue] =
-  result = @[]
-  for i in countup(0, req.arr.len-2, 2):
-    result.add(newZSetValue(req.arr[i].str.get(), req.arr[i+1].str.get().parseFloat()))
+  result.addCmd("ZDIFF", $keysAmount, key)
+  result.extend(keys)
 
 # ZDIFFSTORE destination numkeys key [key ...] 
 proc zDiffStore*(redis: Redis, destKey: string, key: string, keys: varargs[string]): RedisRequestT[int64] =
   result = newRedisRequest[RedisRequestT[int64]](redis)
   let keysAmount: int = 1+keys.len
-  result.addCmd("ZDIFFSTORE", destKey, keysAmount, key)
-  for k in keys:
-    result.add(k)
+  result.addCmd("ZDIFFSTORE", destKey, $keysAmount, key)
+  result.extend(keys)
 
 # ZINCRBY key increment member 
 proc zIncrBy*[T: SomeInteger | SomeFloat](redis: Redis, key, member: string, increment: T): RedisRequestT[RedisStrFloat] =
   result = newRedisRequest[RedisRequestT[RedisStrFloat]](redis)
-  result.addCmd("ZINCRBY", key, increment.float, member)
+  result.addCmd("ZINCRBY", key, $increment, member)
 
 # ZINTER numkeys key [key ...] [WEIGHTS weight [weight ...]] [AGGREGATE SUM|MIN|MAX] [WITHSCORES] 
-proc zInter*[T: SomeInteger | SomeFloat](redis: Redis, keys: seq[string], weights: seq[T] = @[], aggregate: RedisAggregateType = NONE): RedisArrayRequestT[string] =
-  result = newRedisRequest[RedisArrayRequestT[string]](redis)
-  let keysAmount: int = keys.len
-  if keysAmount == 0:
-    raise newException(RedisCommandError, "At least one key must present in ZINTER command")
-  if weights.len > 0 and weights.len != keysAmount:
-    raise newException(RedisCommandError, "Keys and weights count must be equal in ZINTER command")
-  result.addCmd("ZINTER", keysAmount)
-  for key in keys:
-    result.add(key)
-  result.addWeights(weights)
-  if aggregate != NONE:
-    result.add("AGGREGATE", $aggregate)
+proc zInter*(redis: Redis, key: string, keys: varargs[string]): RedisZIURequest =
+  result = newRedisZIURequest(redis)
+  result.keysN = keys.len+1
+  result.addCmd("ZINTER", $result.keysN, key)
+  result.extend(keys)
 
-proc zInterWithScores*[T: SomeInteger | SomeFloat](redis: Redis, keys: seq[string], weights: seq[T] = @[], aggregate: RedisAggregateType = NONE): RedisArrayRequestT[ZSetValue] =
-  result = cast[RedisArrayRequestT[ZSetValue]](zInter(redis, keys, weights, aggregate))
+proc weights*[T: RedisZIURequest | RedisZIUWithScoresRequest | RedisZIUWithStoreRequest, V: SomeInteger | SomeFloat](req: T, weights: varargs[V]): T =
+  result = req
+  if result.keysN != weights.len:
+    raise newException(RedisCommandError, "Keys and weights count must be equal")
+  result.add("WEIGHTS")
+  result.extend(weights, toString)
+
+proc aggregate*[T: RedisZIURequest | RedisZIUWithScoresRequest | RedisZIUWithStoreRequest](req: T, aggType: RedisAggregateType): T =
+  result = req
+  if result.aggregate != NONE:
+    raise newException(RedisCommandError, "AGGREGATE can be given only once")
+  if aggType != NONE:
+    result.add("AGGREGATE", $aggType)
+    result.aggregate = aggType
+
+proc withScores*[T: RedisZIURequest](req: T): RedisZIUWithScoresRequest =
+  result = req.newRedisZIUWithScoresRequest()
   result.add("WITHSCORES")
+
+# ZINTERSTORE destination numkeys key [key ...] [WEIGHTS weight [weight ...]] [AGGREGATE SUM|MIN|MAX] 
+proc zInterStore*(redis: Redis, destKey: string, key: string, keys: varargs[string]): RedisZIUWithStoreRequest =
+  result = newRedisZIUWithStoreRequest(redis)
+  result.keysN = keys.len+1
+  result.addCmd("ZINTERSTORE", destKey, $result.keysN, key)
+  result.extend(keys)
 
 # ZINTERCARD numkeys key [key ...]
 proc zInterCard*(redis: Redis, key: string, keys: varargs[string]): RedisRequestT[int64] =
   result = newRedisRequest[RedisRequestT[int64]](redis)
   let keysAmount: int = 1+keys.len
   result.addCmd("ZINTERCARD", keysAmount, key)
-  for k in keys:
-    result.add(k)
-
-# ZINTERSTORE destination numkeys key [key ...] [WEIGHTS weight [weight ...]] [AGGREGATE SUM|MIN|MAX] 
-proc zInterStore*[T: SomeInteger | SomeFloat](redis: Redis, destKey: string, keys: seq[string], weights: seq[T] = @[], aggregate: RedisAggregateType = NONE): RedisRequestT[int64] =
-  result = newRedisRequest[RedisRequestT[int64]](redis)
-  let keysAmount: int = keys.len
-  if keysAmount == 0:
-    raise newException(RedisCommandError, "At least one key must present in ZINTERSTORE command")
-  if weights.len > 0 and weights.len != keysAmount:
-    raise newException(RedisCommandError, "Keys and weights count must be equal in ZINTERSTORE command")
-  result.addCmd("ZINTERSTORE", keysAmount)
-  for key in keys:
-    result.add(key)
-  result.addWeights(weights)
-  if aggregate != NONE:
-    result.add("AGGREGATE", $aggregate)
+  result.extend(keys)
 
 # ZLEXCOUNT key min max 
-proc checkInter(inter: string): bool =
-  case inter.len()
-  of 0:
-    result = false
-  of 1:
-    result = true
-  of 2:
-    if inter[0] notin ['(', ']']:
-      result = false
-    else:
-      result = true
-  else:
-    result = false
-
-proc zLexCount*(redis: Redis, key, min, max: string): RedisRequestT[int64] =
+proc zLexCount*(redis: Redis, key: string, minMax: ZSetSlice): RedisRequestT[int64] =
   result = newRedisRequest[RedisRequestT[int64]](redis)
-  if min.checkInter() and max.checkInter():
-    result.addCmd("ZLEXCOUNT", key, min, max)
-  else:
+  if minMax.a.checkInter() == false or minMax.b.checkInter() == false:
     raise newException(RedisCommandError, "min and max values must conform the documentation of ZLEXCOUNT command")
+  result.addCmd("ZLEXCOUNT", key, minMax.a, minMax.b)
 
 # ZMSCORE key member [member ...] 
 proc zmScore*(redis: Redis, key: string, member: string, members: varargs[string]): RedisArrayRequestT[Option[RedisStrFloat]] =
   result = newRedisRequest[RedisArrayRequestT[Option[RedisStrFloat]]](redis)
   result.addCmd("ZMSCORE", key, member)
-  for m in members:
-    result.add(m)
+  result.extend(members)
 
 # ZPOPMAX key [count] 
-proc zPopMax*[T: SomeInteger](redis: Redis, key: string, count: Option[T] = T.none): RedisArrayRequestT[ZSetValue] =
-  result = newRedisRequest[RedisArrayRequestT[ZSetValue]](redis)
+proc zPopMax*(redis: Redis, key: string): RedisArrayRequestT[ZSetValue[float]] =
+  result = newRedisRequest[RedisArrayRequestT[ZSetValue[float]]](redis)
   result.addCmd("ZPOPMAX", key)
-  if count.isSome:
-    result.add(count.get().int64)
+
+proc zPopMax*[T: SomeInteger](redis: Redis, key: string, count: T): RedisArrayRequestT[ZSetValue[float]] =
+  result = redis.zPopMax(key)
+  result.add($count)
 
 # ZPOPMIN key [count] 
-proc zPopMin*[T: SomeInteger](redis: Redis, key: string, count: Option[T] = T.none): RedisArrayRequestT[ZSetValue] =
-  result = newRedisRequest[RedisArrayRequestT[ZSetValue]](redis)
+proc zPopMin*(redis: Redis, key: string): RedisArrayRequestT[ZSetValue[float]] =
+  result = newRedisRequest[RedisArrayRequestT[ZSetValue[float]]](redis)
   result.addCmd("ZPOPMIN", key)
-  if count.isSome:
-    result.add(count.get().int64)
+
+proc zPopMin*[T: SomeInteger](redis: Redis, key: string, count: T): RedisArrayRequestT[ZSetValue[float]] =
+  result = redis.zPopMin(key)
+  result.add($count)
 
 # ZRANDMEMBER key [count [WITHSCORES]] 
 proc zRandMember*(redis: Redis, key: string): RedisRequestT[Option[string]] =
   result = newRedisRequest[RedisRequestT[Option[string]]](redis)
   result.addCmd("ZRANDMEMBER", key)
 
-proc zRandMember*[T: SomeInteger](redis: Redis, key: string, count: T): RedisArrayRequestT[string] =
-  result = cast[RedisArrayRequestT[string]](zRandMember(redis, key))
-  result.add(count.int64)
-
-proc zRandMemberWithScores*[T: SomeInteger](redis: Redis, key: string, count: T): RedisArrayRequestT[ZSetValue] =
-  result = cast[RedisArrayRequestT[ZSetValue]](zRandMember(redis, key, count))
-  result.add("WITHSCORES")
+proc zRandMember*[T: SomeInteger](redis: Redis, key: string, count: T): RedisZEnableWithScoresRequest =
+  result = cast[RedisZEnableWithScoresRequest](zRandMember(redis, key))
+  result.add($count)
 
 # ZRANGE key min max [BYSCORE|BYLEX] [REV] [LIMIT offset count] [WITHSCORES] 
-proc zRange*(redis: Redis, key: string, minMax: Slice[int], rev: bool = false, limit: ZSetLimit = nil): RedisArrayRequestT[string] =
-  result = newRedisRequest[RedisArrayRequestT[string]](redis)
-  result.addCmd("ZRANGE", key, minMax.a, minMax.b)
-  result.addRev(rev)
-  result.addLimit(limit)
+proc zRange*[T: SomeInteger | SomeFloat](redis: Redis, key: string, minMax: Slice[T]): RedisZRangeRequest =
+  result = newRedisRequest[RedisZRangeRequest](redis)
+  result.addCmd("ZRANGE", key, $minMax.a, $minMax.b)
 
-proc zRangeWithScores*(redis: Redis, key: string, minMax: Slice[int], rev: bool = false, limit: ZSetLimit = nil): RedisArrayRequestT[ZSetValue] =
-  result = cast[RedisArrayRequestT[ZSetValue]](zRange(redis, key, minMax, rev, limit))
-  result.add("WITHSCORES")
-
-proc zRange*(redis: Redis, key: string, minMax: Slice[float], rev: bool = false, limit: ZSetLimit = nil): RedisArrayRequestT[string] =
-  result = newRedisRequest[RedisArrayRequestT[string]](redis)
-  result.addCmd("ZRANGE", key, minMax.a, minMax.b, "BYSCORE")
-  result.addRev(rev)
-  result.addLimit(limit)
-
-proc zRangeWithScores*(redis: Redis, key: string, minMax: Slice[float], rev: bool = false, limit: ZSetLimit = nil): RedisArrayRequestT[ZSetValue] =
-  result = cast[RedisArrayRequestT[ZSetValue]](zRange(redis, key, minMax, rev, limit))
-  result.add("WITHSCORES")
-
-proc zRange*(redis: Redis, key: string, min, max: string, rev: bool = false, limit: ZSetLimit = nil): RedisArrayRequestT[string] =
-  result = newRedisRequest[RedisArrayRequestT[string]](redis)
-  if min.checkInter() and max.checkInter():
-    result.addCmd("ZRANGE", key, min, max, "BYLEX")
-  else:
+proc zRange*(redis: Redis, key: string, minMax: ZSetSlice): RedisZRangeRequest =
+  result = newRedisRequest[RedisZRangeRequest](redis)
+  if minMax.a.checkInter() == false or minMax.b.checkInter() == false:
     raise newException(RedisCommandError, "min and max values must conform the documentation of ZRANGE command")
-  result.addRev(rev)
-  result.addLimit(limit)
+  result.addCmd("ZRANGE", key, minMax.a, minMax.b)
 
-proc zRangeWithScores*(redis: Redis, key: string, min, max: string, rev: bool = false, limit: ZSetLimit = nil): RedisArrayRequestT[ZSetValue] =
-  result = cast[RedisArrayRequestT[ZSetValue]](zRange(redis, key, min, max, rev, limit))
-  result.add("WITHSCORES")
+proc rev*[T: RedisZRangeRequest | RedisZRangeStoreRequest](req: T): T =
+  result = req
+  result.add("REV")
+
+proc limit*[T: RedisZRangeBLRequest | RedisZRangeBSRequest | RedisZRangeStoreRequest](req: T, offset: int, count: int): T =
+  result = req
+  result.add("LIMIT", $offset, $count)
+
+proc byScore*(req: RedisZRangeRequest): RedisZRangeBSRequest =
+  result = cast[RedisZRangeBSRequest](req)
+  result.add("BYSCORE")
+
+proc byLex*(req: RedisZRangeRequest): RedisZRangeBLRequest =
+  result = cast[RedisZRangeBLRequest](req)
+  result.add("BYLEX")
 
 # ZRANGEBYLEX key min max [LIMIT offset count] 
-proc zRangeByLex*(redis: Redis, key: string, min, max: string, rev: bool = false, limit: ZSetLimit = nil): RedisArrayRequestT[string] =
-  result = newRedisRequest[RedisArrayRequestT[string]](redis)
-  if min.checkInter() and max.checkInter():
-    result.addCmd("ZRANGEBYLEX", key, min, max)
-  else:
+proc zRangeByLex*(redis: Redis, key: string, minMax: ZSetSlice): RedisZRangeBLRequest =
+  result = newRedisRequest[RedisZRangeBLRequest](redis)
+  if minMax.a.checkInter() == false or minMax.b.checkInter() == false:
     raise newException(RedisCommandError, "min and max values must conform the documentation of ZRANGEBYLEX command")
-  result.addLimit(limit)
+  result.addCmd("ZRANGEBYLEX", key, minMax.a, minMax.b)
 
 # ZRANGEBYSCORE key min max [WITHSCORES] [LIMIT offset count]
-proc zRangeByScore*(redis: Redis, key: string, minMax: Slice[float], limit: ZSetLimit = nil): RedisArrayRequestT[string] =
-  result = newRedisRequest[RedisArrayRequestT[string]](redis)
-  result.addCmd("ZRANGEBYSCORE", key, minMax.a, minMax.b)
-  result.addLimit(limit)
+proc zRangeByScore*[T: SomeInteger| SomeFloat](redis: Redis, key: string, minMax: Slice[T]): RedisZRangeBSRequest =
+  result = newRedisRequest[RedisZRangeBSRequest](redis)
+  result.addCmd("ZRANGEBYSCORE", key, $minMax.a, $minMax.b)
 
-proc zRangeByScoreWithScores*(redis: Redis, key: string, minMax: Slice[float], limit: ZSetLimit = nil): RedisArrayRequestT[ZSetValue] =
-  result = cast[RedisArrayRequestT[ZSetValue]](zRangeByScore(redis, key, minMax, limit))
-  result.add("WITHSCORES")
+proc zRangeByScore*(redis: Redis, key: string, minMax: ZSetSlice): RedisZRangeBSRequest =
+  result = newRedisRequest[RedisZRangeBSRequest](redis)
+  if minMax.a.checkInter() == false or minMax.b.checkInter() == false:
+    raise newException(RedisCommandError, "min and max values must conform the documentation of ZRANGEBYSCORE command")
+  result.addCmd("ZRANGEBYSCORE", key, minMax.a, minMax.b)
 
 # ZRANGESTORE dst src min max [BYSCORE|BYLEX] [REV] [LIMIT offset count] 
-proc zRangeStore*(redis: Redis, destKey: string, key: string, minMax: Slice[int], rev: bool = false, limit: ZSetLimit = nil): RedisRequestT[int64] =
-  result = newRedisRequest[RedisRequestT[int64]](redis)
-  result.addCmd("ZRANGESTORE", destKey, key, minMax.a, minMax.b)
-  result.addRev(rev)
-  result.addLimit(limit)
+proc zRangeStore*[T: SomeInteger | SomeFloat](redis: Redis, destKey: string, key: string, minMax: Slice[T]): RedisZRangeStoreRequest =
+  result = newRedisRequest[RedisZRangeStoreRequest](redis)
+  result.addCmd("ZRANGESTORE", destKey, key, $minMax.a, $minMax.b)
 
-proc zRangeStore*(redis: Redis, destKey: string, key: string, minMax: Slice[float], rev: bool = false, limit: ZSetLimit = nil): RedisRequestT[int64] =
-  result = newRedisRequest[RedisRequestT[int64]](redis)
-  result.addCmd("ZRANGESTORE", destKey, key, minMax.a, minMax.b, "BYSCORE")
-  result.addRev(rev)
-  result.addLimit(limit)
-
-proc zRangeStore*(redis: Redis, destKey: string, key: string, min, max: string, rev: bool = false, limit: ZSetLimit = nil): RedisRequestT[int64] =
-  result = newRedisRequest[RedisRequestT[int64]](redis)
-  if min.checkInter() and max.checkInter():
-    result.addCmd("ZRANGESTORE", destKey, key, min, max, "BYLEX")
-  else:
+proc zRangeStore*(redis: Redis, destKey: string, key: string, minMax: ZSetSlice): RedisZRangeStoreRequest =
+  result = newRedisRequest[RedisZRangeStoreRequest](redis)
+  if minMax.a.checkInter() == false or minMax.b.checkInter() == false:
     raise newException(RedisCommandError, "min and max values must conform the documentation of ZRANGESTORE command")
-  result.addRev(rev)
-  result.addLimit(limit)
+  result.addCmd("ZRANGESTORE", key, minMax.a, minMax.b)
 
 # ZRANK key member 
 proc zRank*(redis: Redis, key, member: string): RedisRequestT[Option[int64]] =
@@ -378,54 +367,59 @@ proc zRank*(redis: Redis, key, member: string): RedisRequestT[Option[int64]] =
 proc zRem*(redis: Redis, key, member: string, members: varargs[string]): RedisRequestT[int64] =
   result = newRedisRequest[RedisRequestT[int64]](redis)
   result.addCmd("ZREM", key, member)
-  for m in members:
-    result.add(m)
+  result.extend(members)
 
 # ZREMRANGEBYLEX key min max 
-proc zRemRangeByLex*(redis: Redis, key, min, max: string): RedisRequestT[int64] =
+proc zRemRangeByLex*(redis: Redis, key: string, minMax: ZSetSlice): RedisRequestT[int64] =
   result = newRedisRequest[RedisRequestT[int64]](redis)
-  if checkInter(min) and checkInter(max):
-    result.addCmd("ZREMRANGEBYLEX", key, min, max)
-  else:
+  if minMax.a.checkInter() == false or minMax.b.checkInter() == false:
     raise newException(RedisCommandError, "min and max values must conform the documentation of ZREMRANGEBYLEX command")
+  result.addCmd("ZREMRANGEBYLEX", key, minMax.a, minMax.b)
 
 # ZREMRANGEBYRANK key start stop 
-proc zRemRangeByRank*(redis: Redis, key: string, minMax: Slice[int]): RedisRequestT[int64] =
+proc zRemRangeByRank*[T: SomeInteger](redis: Redis, key: string, minMax: Slice[T]): RedisRequestT[int64] =
   result = newRedisRequest[RedisRequestT[int64]](redis)
-  result.addCmd("ZREMRANGEBYRANK", key, minMax.a, minMax.b)
+  result.addCmd("ZREMRANGEBYRANK", key, $minMax.a, $minMax.b)
 
 # ZREMRANGEBYSCORE key min max 
-proc zRemRangeByScore*(redis: Redis, key: string, minMax: Slice[float]): RedisRequestT[int64] =
+proc zRemRangeByScore*[T: SomeInteger | SomeFloat](redis: Redis, key: string, minMax: Slice[T]): RedisRequestT[int64] =
   result = newRedisRequest[RedisRequestT[int64]](redis)
+  result.addCmd("ZREMRANGEBYSCORE", key, $minMax.a, $minMax.b)
+
+proc zRemRangeByScore*(redis: Redis, key: string, minMax: ZSetSlice): RedisRequestT[int64] =
+  result = newRedisRequest[RedisRequestT[int64]](redis)
+  if minMax.a.checkInter() == false or minMax.b.checkInter() == false:
+    raise newException(RedisCommandError, "min and max values must conform the documentation of ZREMRANGEBYSCORE command")
   result.addCmd("ZREMRANGEBYSCORE", key, minMax.a, minMax.b)
 
 # ZREVRANGE key start stop [WITHSCORES] 
-proc zRevRange*(redis: Redis, key: string, minMax: Slice[int]): RedisArrayRequestT[string] =
-  result = newRedisRequest[RedisArrayRequestT[string]](redis)
+proc zRevRange*[T: SomeInteger | SomeFloat](redis: Redis, key: string, minMax: Slice[T]): RedisZEnableWithScoresRequest =
+  result = newRedisRequest[RedisZEnableWithScoresRequest](redis)
+  result.addCmd("ZREVRANGE", key, $minMax.a, $minMax.b)
+
+proc zRevRange*(redis: Redis, key: string, minMax: ZSetSlice): RedisZEnableWithScoresRequest =
+  result = newRedisRequest[RedisZEnableWithScoresRequest](redis)
+  if minMax.a.checkInter() == false or minMax.b.checkInter() == false:
+    raise newException(RedisCommandError, "min and max values must conform the documentation of ZREVRANGE command")
   result.addCmd("ZREVRANGE", key, minMax.a, minMax.b)
 
-proc zRevRangeWithScores*(redis: Redis, key: string, minMax: Slice[int]): RedisArrayRequestT[ZSetValue] =
-  result = cast[RedisArrayRequestT[ZSetValue]](zRevRange(redis, key, minMax))
-  result.add("WITHSCORES")
-
 # ZREVRANGEBYLEX key max min [LIMIT offset count] 
-proc zRevRangeByLex*(redis: Redis, key, min, max: string, limit: ZSetLimit = nil): RedisArrayRequestT[string] =
-  result = newRedisRequest[RedisArrayRequestT[string]](redis)
-  if checkInter(min) and checkInter(max):
-    result.addCmd("ZREVRANGEBYLEX", key, min, max)
-  else:
+proc zRevRangeByLex*(redis: Redis, key: string, minMax: ZSetSlice): RedisZRangeBLRequest =
+  result = newRedisRequest[RedisZRangeBLRequest](redis)
+  if minMax.a.checkInter() == false or minMax.b.checkInter() == false:
     raise newException(RedisCommandError, "min and max values must conform the documentation of ZREVRANGEBYLEX command")
-  result.addLimit(limit)
+  result.addCmd("ZREVRANGEBYLEX", key,  minMax.a, minMax.b)
 
 # ZREVRANGEBYSCORE key max min [LIMIT offset count] [WITHSCORES]
-proc zRevRangeByScore*(redis: Redis, key: string, minMax: Slice[float], limit: ZSetLimit = nil): RedisArrayRequestT[string] =
-  result = newRedisRequest[RedisArrayRequestT[string]](redis)
-  result.addCmd("ZREVRANGEBYSCORE", key, minMax.a, minMax.b)
-  result.addLimit(limit)
+proc zRevRangeByScore*[T: SomeInteger | SomeFloat](redis: Redis, key: string, minMax: Slice[T]): RedisZRangeBSRequest =
+  result = newRedisRequest[RedisZRangeBSRequest](redis)
+  result.addCmd("ZREVRANGEBYSCORE", key, $minMax.a, $minMax.b)
 
-proc zRevRangeByScoreWithScores*(redis: Redis, key: string, minMax: Slice[float], limit: ZSetLimit = nil): RedisArrayRequestT[ZSetValue] =
-  result = cast[RedisArrayRequestT[ZSetValue]](zRevRangeByScore(redis, key, minMax, limit))
-  result.add("WITHSCORES")
+proc zRevRangeByScore*(redis: Redis, key: string, minMax: ZSetSlice): RedisZRangeBSRequest =
+  result = newRedisRequest[RedisZRangeBSRequest](redis)
+  if minMax.a.checkInter() == false or minMax.b.checkInter() == false:
+    raise newException(RedisCommandError, "min and max values must conform the documentation of ZREVRANGEBYSCORE command")
+  result.addCmd("ZREVRANGEBYSCORE", key, minMax.a, minMax.b)
 
 # ZREVRANK key member 
 proc zRevRank*(redis: Redis, key, member: string): RedisRequestT[Option[int64]] =
@@ -433,79 +427,68 @@ proc zRevRank*(redis: Redis, key, member: string): RedisRequestT[Option[int64]] 
   result.addCmd("ZREVRANK", key, member)
 
 # ZSCAN key cursor [MATCH pattern] [COUNT count] 
-proc zScan*(redis: Redis, match: Option[string] = string.none, count: int = -1): RedisCursorRequestT[ZSetValue] =
-  result = newRedisCursor[RedisCursorRequestT[ZSetValue]](redis)
+proc zScan*(redis: Redis, match: Option[string] = string.none, count: int = -1): RedisCursorRequestT[ZSetValue[float]] =
+  result = newRedisCursor[RedisCursorRequestT[ZSetValue[float]]](redis)
   result.addCmd("ZSCAN", 0)
   if match.isSome:
     result.add("MATCH", match.get())
   if count > 0:
     result.add("COUNT", count)
 
-proc next*(cursor: RedisCursorRequestT[ZSetValue]): Future[tuple[stop: bool, res: ZSetValue]] {.async.} =
+proc next*(cursor: RedisCursorRequestT[ZSetValue[float]]): Future[tuple[stop: bool, res: ZSetValue[float]]] {.async.} =
   let res = await cast[RedisCursorRequest](cursor).next()
   if res[0]:
-    result = (true, nil)
+    result = (true, ("", 0.0))
   else:
-    result = (false, newZSetValue(res[1].arr[0].str.get(), res[1].arr[1].str.get().parseFloat()))
+    result = (false, (res[1].arr[0].str.get(), res[1].arr[1].str.get().parseFloat()))
 
 # ZSCORE key member 
-proc zScore*(redis: Redis, key, member: string): RedisRequestT[RedisStrFloat] =
-  result = newRedisRequest[RedisRequestT[RedisStrFloat]](redis)
+proc zScore*(redis: Redis, key, member: string): RedisRequestT[Option[RedisStrFloat]] =
+  result = newRedisRequest[RedisRequestT[Option[RedisStrFloat]]](redis)
   result.addCmd("ZSCORE", key, member)
 
 # ZUNION numkeys key [key ...] [WEIGHTS weight [weight ...]] [AGGREGATE SUM|MIN|MAX] [WITHSCORES] 
-proc zUnion*[T: SomeInteger | SomeFloat](redis: Redis, keys: seq[string], weights: seq[T] = @[], aggregate: RedisAggregateType = NONE): RedisArrayRequestT[string] =
-  result = newRedisRequest[RedisArrayRequestT[string]](redis)
-  let keysAmount: int = keys.len
-  if keysAmount == 0:
-    raise newException(RedisCommandError, "At least one key must present in ZUNION command")
-  if weights.len > 0 and weights.len != keysAmount:
-    raise newException(RedisCommandError, "Keys and weights count must be equal in ZUNION command")
-  result.addCmd("ZUNION", keysAmount)
-  for key in keys:
-    result.add(key)
-  result.addWeights(weights)
-  if aggregate != NONE:
-    result.add("AGGREGATE", $aggregate)
-
-proc zUnionWithScores*[T: SomeInteger | SomeFloat](redis: Redis, keys: seq[string], weights: seq[T] = @[], aggregate: RedisAggregateType = NONE): RedisArrayRequestT[ZSetValue] =
-  result = cast[RedisArrayRequestT[ZSetValue]](zInter(redis, keys, weights, aggregate))
-  result.add("WITHSCORES")
+proc zUnion*(redis: Redis, key: string, keys: varargs[string]): RedisZIURequest =
+  result = newRedisZIURequest(redis)
+  result.keysN = keys.len+1
+  result.addCmd("ZUNION", $result.keysN, key)
+  result.extend(keys)
 
 # ZUNIONSTORE destination numkeys key [key ...] [WEIGHTS weight [weight ...]] [AGGREGATE SUM|MIN|MAX] 
-proc zUnionStore*[T: SomeInteger | SomeFloat](redis: Redis, destKey: string, keys: seq[string], weights: seq[T] = @[], aggregate: RedisAggregateType = NONE): RedisRequestT[int64] =
-  result = newRedisRequest[RedisRequestT[int64]](redis)
-  let keysAmount: int = keys.len
-  if keysAmount == 0:
-    raise newException(RedisCommandError, "At least one key must present in ZUNIONSTORE command")
-  if weights.len > 0 and weights.len != keysAmount:
-    raise newException(RedisCommandError, "Keys and weights count must be equal in ZUNIONSTORE command")
-  result.addCmd("ZUNIONSTORE", keysAmount)
-  for key in keys:
-    result.add(key)
-  result.addWeights(weights)
-  if aggregate != NONE:
-    result.add("AGGREGATE", $aggregate)
+proc zUinonStore*(redis: Redis, destKey: string, key: string, keys: varargs[string]): RedisZIUWithStoreRequest =
+  result = newRedisZIUWithStoreRequest(redis)
+  result.keysN = keys.len+1
+  result.addCmd("ZUNIONSTORE", destKey, $result.keysN, key)
+  result.extend(keys)
+
+#------- common
+
+proc fromRedisReq*(_: type[tuple[key: string, value: ZSetValue[float]]], req: RedisMessage): seq[tuple[key: string, value: ZSetValue[float]]] =
+  result = @[]
+  if req.kind != REDIS_MESSAGE_NIL:
+    for i in countup(0, req.arr.len-3, 3):
+      let val = (req.arr[i].str.get(), (req.arr[i+1].str.get(), req.arr[i+2].str.get().parseFloat()))
+      result.add(val)
+
+proc fromRedisReq*(_: type[seq[ZSetValue[float]]], req: RedisMessage): seq[ZSetValue[float]] =
+  result = @[]
+  for i in countup(0, req.arr.len-2, 2):
+    result.add((req.arr[i].str.get(), req.arr[i+1].str.get().parseFloat()))
+
+proc withScores*[T: RedisZRangeRequest | RedisZRangeBLRequest | RedisZRangeBSRequest | RedisZEnableWithScoresRequest](req: T): RedisWithScoresRequest =
+  result = cast[RedisWithScoresRequest](req)
+  result.add("WITHSCORES")
 
 #------- pvt
 
-proc newRedisZAddRequest(redis: Redis): RedisZAddRequest =
-  result = newRedisRequest[RedisZAddRequest](redis)
-  result.nx = false
-  result.xx = false
-  result.gt = false
-  result.lt = false
-
-proc addRev(req: RedisRequest, rev: bool) {.inline.} =
-  if rev:
-    req.add("REV")
-
-proc addLimit(req: RedisRequest, limit: ZSetLimit) {.inline.} =
-  if not limit.isNil:
-    req.add("LIMIT", limit.offset, limit.count)
-
-proc addWeights[T: SomeInteger | SomeFloat](req: RedisRequest, weights: seq[T]) {.inline.} =
-  if weights.len > 0:
-    req.add("WEIGHTS")
-    for weight in weights:
-      req.add(weight.float)
+proc checkInter(inter: string): bool {.inline.} =
+  case inter.len()
+  of 0:
+    result = false
+  of 1:
+    result = true
+  else:
+    if inter[0] notin ['(', ')', '[', ']', '-', '+']:
+      result = false
+    else:
+      result = true
