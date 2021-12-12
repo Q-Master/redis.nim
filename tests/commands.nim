@@ -1,6 +1,6 @@
 import unittest
 import std/[asyncdispatch, times, options, tables]
-import redis/redis
+import asyncredis/asyncredis
 
 suite "Redis commands":
   const KEY1 = "KEY1"

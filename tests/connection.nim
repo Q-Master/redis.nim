@@ -1,7 +1,7 @@
 import unittest
 import asyncdispatch
-import redis/private/connection
-import redis/private/exceptions
+import asyncredis/private/connection
+import asyncredis/private/exceptions
 
 suite "Redis connection":
   setup:
