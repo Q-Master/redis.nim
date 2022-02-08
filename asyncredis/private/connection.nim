@@ -1,6 +1,6 @@
 import std/[tables, strutils, times, asyncdispatch]
 import ./exceptions
-import ./buffered_socket
+import networkutils/buffered_socket
 
 const
   REDIS_READER_MAX_BUF: int = 1024*16

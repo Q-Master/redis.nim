@@ -1,11 +1,11 @@
 # Package
 description = "Pure Nim asyncronous driver for Redis DB"
-version     = "0.8"
+version     = "0.8.1"
 license     = "MIT"
 author      = "Vladimir Berezenko <qmaster2000@gmail.com>"
 
 # Dependencies
-requires "nim >= 1.4.00", "ptr_math"
+requires "nim >= 1.4.00", "https://github.com/Q-Master/networkutils.nim.git"
 
 task test, "tests":
   let tests = @["connection", "proto", "commands"]
