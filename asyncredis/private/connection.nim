@@ -28,7 +28,7 @@ type
     sock: AsyncBufferedSocket
 
 proc newRedisConn(): RedisConn
-proc disconnect[T: RedisConn | RedisConnObj](redis: var T)
+proc disconnect[T: RedisConn | RedisConnObj](redis: var T): Future[void]
 
 proc connect*(pool: Redis) {.async.} =
   for i in 0 ..< pool.pool.len:
@@ -95,7 +95,7 @@ proc close*(pool: Redis) {.async.}=
         if s.inuse:
           closed = false
         else:
-          s.disconnect()
+          await s.disconnect()
     await sleepAsync(1)
 
 template withRedis*(t: Redis, x: untyped) = 
@@ -121,21 +121,21 @@ proc needsAuth*(redis: RedisConn): bool = redis.needsAuth and not redis.authenti
 
 #------- pvt
 
-proc disconnect[T: RedisConn | RedisConnObj](redis: var T) =
+proc disconnect[T: RedisConn | RedisConnObj](redis: var T): Future[void] =
   if redis.connected:
-    redis.sock.close()
+    result = redis.sock.close()
     #TODO Add calling all waiting callbacks
   redis.connected = false
   redis.inuse = false
 
 proc `=destroy`(redis: var RedisConnObj) =
   if redis.connected:
-    redis.disconnect()
+    waitFor(redis.disconnect())
 
 proc newRedisConn(): RedisConn =
   result.new()
   result.inuse = false
   result.authenticated = false
   result.connected = false
-  result.sock = newAsyncBufferedSocket(bufSize = REDIS_READER_MAX_BUF)
+  result.sock = newAsyncBufferedSocket(inBufSize = REDIS_READER_MAX_BUF)
   #result.queue = newTable[ int32, tuple[cur: Cursor[AsyncMongo], fut: Future[seq[Bson]]] ]()
