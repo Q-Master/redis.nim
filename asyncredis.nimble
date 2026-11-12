@@ -5,7 +5,7 @@ license     = "MIT"
 author      = "Vladimir Berezenko <qmaster2000@gmail.com>"
 
 # Dependencies
-requires "nim >= 2.0", "networkutils >= 0.7.0"
+requires "nim >= 2.0", "networkutils >= 0.7.1"
 
 task test, "tests":
   let tests = @["connection", "proto", "commands"]

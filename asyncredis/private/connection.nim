@@ -105,21 +105,27 @@ template withRedis*(t: Redis, x: untyped) =
   finally:
     redis.release()
 
-proc readLine*(redis: RedisConn): Future[string] {.async.} =
-  result = await redis.sock.recvLine(maxLen = REDIS_READER_MAX_BUF)
-
-proc readRawString*(redis: RedisConn, length: int): Future[string] {.async.} =
+template transportGuard(redis: RedisConn, body: untyped) =
   try:
-    result = await redis.sock.recv(length)
+    body
   except ConnectionClosedError, TimeoutError, OSError:
     redis.connected = false
-    raise newException(RedisConnectionError, getCurrentExceptionMsg())
+    raise newException(RedisConnectionError, getCurrentExceptionMsg(), getCurrentException())
+
+proc readLine*(redis: RedisConn): Future[string] {.async.} =
+  transportGuard(redis):
+    result = await redis.sock.recvLine(maxLen = REDIS_READER_MAX_BUF)
+
+proc readRawString*(redis: RedisConn, length: int): Future[string] {.async.} =
+  transportGuard(redis):
+    result = await redis.sock.recv(length)
 
 proc sendLine*(redis: RedisConn, data: seq[string]) {.async.} =
   var line = data.join("\r\L")
   line = line & "\r\L"
   #echo "CMD: ", line
-  let size {.used.} = await redis.sock.send(line)
+  transportGuard(redis):
+    let size {.used.} = await redis.sock.send(line)
 
 proc needsAuth*(redis: RedisConn): bool = redis.needsAuth and not redis.authenticated
 
