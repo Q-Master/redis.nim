@@ -1,4 +1,4 @@
-import std/[tables, strutils, times, asyncdispatch]
+import std/[tables, strutils, times, asyncdispatch, net]
 import ./exceptions
 import networkutils/buffered_socket
 
@@ -100,16 +100,20 @@ proc close*(pool: Redis) {.async.}=
 
 template withRedis*(t: Redis, x: untyped) = 
   var redis {.inject.} = await t.acquire()
-  x
-  redis.release()
+  try:
+    x
+  finally:
+    redis.release()
 
 proc readLine*(redis: RedisConn): Future[string] {.async.} =
   result = await redis.sock.recvLine(maxLen = REDIS_READER_MAX_BUF)
 
 proc readRawString*(redis: RedisConn, length: int): Future[string] {.async.} =
-  result = await redis.sock.recv(length)
-  if result.len < length:
-    echo "Raw string read failed"
+  try:
+    result = await redis.sock.recv(length)
+  except ConnectionClosedError, TimeoutError, OSError:
+    redis.connected = false
+    raise newException(RedisConnectionError, getCurrentExceptionMsg())
 
 proc sendLine*(redis: RedisConn, data: seq[string]) {.async.} =
   var line = data.join("\r\L")

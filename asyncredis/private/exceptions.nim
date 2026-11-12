@@ -1,7 +1,7 @@
 import std/strutils
 
 type
-  RedisError* = object of Defect
+  RedisError* = object of CatchableError
   RedisTypeError* = object of RedisError
   RedisProtocolError* = object of RedisError
   RedisAuthError* = object of RedisError
@@ -61,7 +61,7 @@ proc raiseException*(error: string) =
     raise newException(RedisNoScriptError, errorString)
   elif errCode == "READONLY":
     raise newException(RedisReadOnlyError, errorString)
-  elif errCode == "NOAUTH":
+  elif errCode == "NOAUTH" or errCode == "WRONGPASS":
     raise newException(RedisAuthError, errorString)
   elif errCode == "NOPERM":
     raise newException(RedisNoPermissionError, errorString)
