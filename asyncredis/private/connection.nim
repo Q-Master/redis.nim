@@ -65,6 +65,9 @@ proc acquire*(pool: Redis): Future[RedisConn] {.async.} =
       try:
         await pool.connectConn(s)
         return s
+      except RedisAuthError:
+        s.inuse = false
+        raise
       except CatchableError as e:
         s.inuse = false
         inc failures
@@ -149,7 +152,7 @@ proc sendLine*(redis: RedisConn, data: seq[string]) {.async.} =
 
 
 proc disconnect[T: RedisConn | RedisConnObj](redis: var T): Future[void] =
-  if redis.connected:
+  if not redis.sock.isNil:
     result = redis.sock.close()
     #TODO Add calling all waiting callbacks
   redis.connected = false
