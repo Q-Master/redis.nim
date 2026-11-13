@@ -337,7 +337,7 @@ proc zRangeByLex*(redis: Redis, key: string, minMax: ZSetSlice): RedisZRangeBLRe
   result.addCmd("ZRANGEBYLEX", key, minMax.a, minMax.b)
 
 # ZRANGEBYSCORE key min max [WITHSCORES] [LIMIT offset count]
-proc zRangeByScore*[T: SomeInteger| SomeFloat](redis: Redis, key: string, minMax: Slice[T]): RedisZRangeBSRequest =
+proc zRangeByScore*[T: SomeInteger | SomeFloat](redis: Redis, key: string, minMax: Slice[T]): RedisZRangeBSRequest =
   result = newRedisRequest[RedisZRangeBSRequest](redis)
   result.addCmd("ZRANGEBYSCORE", key, $minMax.a, $minMax.b)
 

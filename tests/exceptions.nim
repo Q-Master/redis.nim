@@ -1,7 +1,7 @@
 import std/[unittest]
 import asyncredis/private/exceptions
 
-suite "Redis connection":
+suite "Redis exceptions":
   setup:
     discard
 
