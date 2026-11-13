@@ -13,6 +13,7 @@ macro asyncFor*(iterClause: untyped, body: untyped): untyped =
       if future.failed: 
         raise future.readError()
       let tu = future.read()
-      if not tu[0]: break
+      if tu[0]:
+        break
       let `itemName` {.inject.} = tu[1]
       `body`

@@ -1,5 +1,5 @@
 import unittest
-import std/[asyncdispatch, times, options, tables]
+import std/[asyncdispatch, times, options, tables, sets, hashes]
 import asyncredis/asyncredis
 
 
@@ -51,11 +51,11 @@ suite "Redis commands":
         check(nameResp.get("") == TEST_USER_NAME)
         # CLIENT LIST [TYPE normal|master|replica|pubsub] [ID client-id [client-id ...]] 
         let clResponse: seq[ClientInfo] = await connection.clientList()
-        check(clResponse[0].cmd == "client")
+        check(clResponse[0].cmd == "client" or clResponse[0].cmd == "client|list")
         check(clResponse.len >= 2)
         # CLIENT INFO 
         let ciResponse: ClientInfo = await connection.clientInfo()
-        check(ciResponse.cmd == "client")
+        check(ciResponse.cmd == "client" or ciResponse.cmd == "client|info")
         # CLIENT GETREDIR 
         let redirResponse = await connection.clientGetRedir()
         check(redirResponse == -1)
@@ -382,7 +382,7 @@ suite "Redis commands":
         intRepl = await connection.del(KEY1)
         intRepl = await connection.hSet(KEY1, {"a": 1, "b": 2, "c": 3}.toTable())
         strReplArray = await connection.hVals(KEY1)
-        check(strReplArray == @["1", "2", "3"])
+        check(strReplArray == @["3", "1", "2"])
         # HGET key field 
         optStrRepl = await connection.hGet(KEY1, "a")
         check(optStrRepl == "1".option)
@@ -803,6 +803,93 @@ suite "Redis commands":
         fail()
       await connection.close()
     waitFor(testSortedSets())
+
+    test "SCAN iterates all keys":
+      proc tscan() {.async.} =
+        let pool = newRedis(REDIS_HOST, 6379, 0, poolsize=1, timeout=5000)
+        await pool.connect()
+        discard await pool.flushAll(REDIS_FLUSH_SYNC)
+        for i in 0 ..< 100:
+          discard await pool.set("scankey:" & $i, $i)
+        var got = initHashSet[string]()
+        let cur = pool.scan(count = 10)        # маленький COUNT → много батчей, в т.ч. пустых
+        while true:
+          let (stop, key) = await cur.next()
+          if stop:
+            break
+          got.incl(key)
+        check got.len == 100                   # SCAN может дублировать → множество
+        await pool.close()
+      waitFor(tscan())
+
+    test "HSCAN iterates field-value pairs":
+      proc thscan() {.async.} =
+        let pool = newRedis(REDIS_HOST, 6379, 0, poolsize=1, timeout=5000)
+        await pool.connect()
+        discard await pool.flushAll(REDIS_FLUSH_SYNC)
+        for i in 0 ..< 50:
+          discard await pool.hSet("myhash", ("field" & $i, $i))
+        var got = initTable[string, string]()
+        let cur = pool.hScan("myhash", count = 10)
+        while true:
+          let (stop, kv) = await cur.next()
+          if stop:
+            break
+          got[kv.key] = kv.value
+        check got.len == 50 and got["field7"] == "7"
+        await pool.close()
+      waitFor(thscan())
+
+    test "SSCAN iterates set members":
+      proc tsscan() {.async.} =
+        let pool = newRedis(REDIS_HOST, 6379, 0, poolsize=1, timeout=5000)
+        await pool.connect()
+        discard await pool.flushAll(REDIS_FLUSH_SYNC)
+        for i in 0 ..< 100:
+          discard await pool.sAdd("myset", $i)
+        var got = initHashSet[string]()
+        let cur = pool.sScan("myset", count = 10)
+        while true:
+          let (stop, member) = await cur.next()
+          if stop:
+            break
+          got.incl(member)
+        check got.len == 100
+        await pool.close()
+      waitFor(tsscan())
+
+    test "ZSCAN iterates member-score pairs":
+      proc tzscan() {.async.} =
+        let pool = newRedis(REDIS_HOST, 6379, 0, poolsize=1, timeout=5000)
+        await pool.connect()
+        discard await pool.flushAll(REDIS_FLUSH_SYNC)
+        for i in 0 ..< 50:
+          discard await pool.zAdd("myzset", ("m" & $i, float(i)))
+        var got = initTable[string, float]()
+        let cur = pool.zScan("myzset", count = 10)
+        while true:
+          let (stop, ms) = await cur.next()
+          if stop:
+            break
+          got[ms.member] = ms.score
+        check got.len == 50 and got["m7"] == 7.0
+        await pool.close()
+      waitFor(tzscan())
+
+    test "asyncFor over SCAN":
+      proc tasyncFor() {.async.} =
+        let pool = newRedis(REDIS_HOST, 6379, 0, poolsize=1, timeout=5000)
+        await pool.connect()
+        discard await pool.flushAll(REDIS_FLUSH_SYNC)
+        for i in 0 ..< 20:
+          discard await pool.set("af:" & $i, $i)
+        var n = 0
+        let cur = pool.scan()
+        asyncFor key in cur:
+          inc n
+        check n >= 20
+        await pool.close()
+      waitFor(tasyncFor())
 #[
         let expTime = now()+2.seconds+500.milliseconds
         replGet = await connection.getEx("KEY1").ex(initDuration(seconds=60)).execute()

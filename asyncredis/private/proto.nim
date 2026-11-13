@@ -3,6 +3,7 @@ import std/[strutils, sets, tables, hashes, json, options, sha1]
 import ./connection
 import ./exceptions
 
+
 type
   RedisMessageKind* = enum
     REDIS_MESSAGE_ERROR,
@@ -131,9 +132,12 @@ proc encodeRedis*[T](x: openArray[T]): RedisMessage
 proc encodeRedis*[T](x: tuple[a: string, b: T]): RedisMessage
 proc encodeRedis*[T](x: array[0..0, (string, T)]): RedisMessage
 
+
 proc processLineItem(resTyp: RedisMessageKind, item: string, key: bool): RedisMessage
 proc processBulkItem(redis: RedisConn, resTyp: RedisMessageKind, item: string, key: bool): Future[RedisMessage] {.async.}
 proc processAggregateItem(redis: RedisConn, resTyp: RedisMessageKind, item: string): Future[RedisMessage] {.async.}
+
+
 proc parseResponse*(redis: RedisConn, key: bool = false): Future[RedisMessage] {.async.} =
   var tp: RedisMessageKind
   while true:
@@ -191,6 +195,7 @@ proc parseResponse*(redis: RedisConn, key: bool = false): Future[RedisMessage] {
     of REDIS_MESSAGE_ATTRS, REDIS_MESSAGE_PUSH:
       let _ = await processAggregateItem(redis, tp, response[1 .. ^1]);
 
+
 template encodeString(str: Option[string], prefix = "$") =
   if str.isSome:
     let s = str.get()
@@ -199,9 +204,11 @@ template encodeString(str: Option[string], prefix = "$") =
   else:
     result.add(prefix & "-1")
 
+
 template encodeString(str: string, prefix = "$") =
   result.add(prefix & $str.len)
   result.add(str)
+
 
 proc prepareRequest*(request: RedisMessage): seq[string] =
   result = @[]
@@ -239,15 +246,19 @@ proc prepareRequest*(request: RedisMessage): seq[string] =
   else:
     raise newException(RedisTypeError, "Unsupported type for outgoing requests")
 
+
 proc toText(result: var string, redisMessage: RedisMessage, nextLine = true, currIndent = 0, isArray = false)
+
 
 proc `$`*(redisMessage: RedisMessage): string =
   result = ""
   toText(result, redisMessage, false)
 
+
 proc pretty*(redisMessage: RedisMessage): string =
   result = ""
   toText(result, redisMessage, true)
+
 
 proc toJson*(redisMessage: RedisMessage): JsonNode =
   case redisMessage.kind
@@ -283,6 +294,7 @@ proc toJson*(redisMessage: RedisMessage): JsonNode =
   of REDIS_MESSAGE_ATTRS:
     result = newJNull()
 
+
 #------- pvt
 
 
@@ -291,6 +303,7 @@ template toBiggestInt(item: string): BiggestInt =
   if tmp < low(int64) or tmp > high(int64):
     raise newException(RedisProtocolError, "Bad INTEGER value")
   tmp
+
 
 proc processLineItem(resTyp: RedisMessageKind, item: string, key: bool): RedisMessage =
   if key:
@@ -328,6 +341,7 @@ proc processLineItem(resTyp: RedisMessageKind, item: string, key: bool): RedisMe
     else:
       raise newException(RedisTypeError, "Wrong type for line item")
 
+
 proc processBulkItem(redis: RedisConn, resTyp: RedisMessageKind, item: string, key: bool): Future[RedisMessage] {.async.} =
   result = RedisMessage(kind: resTyp)
   let stringSize = toBiggestInt(item)
@@ -345,6 +359,7 @@ proc processBulkItem(redis: RedisConn, resTyp: RedisMessageKind, item: string, k
       raise newException(RedisProtocolError, "String/verb length is wrong")
     if result.kind == REDIS_MESSAGE_VERB and (str.len < 6 or str[3] != ':'):
       raise newException(RedisProtocolError, "Verbatim string 4 bytes of content type are missing or incorrectly encoded. length is wrong")
+
 
 proc processAggregateItem(redis: RedisConn, resTyp: RedisMessageKind, item: string): Future[RedisMessage] {.async.} =
   result = RedisMessage(kind: resTyp)
@@ -376,17 +391,12 @@ proc processAggregateItem(redis: RedisConn, resTyp: RedisMessageKind, item: stri
   else:
     raise newException(RedisTypeError, "Wrong type for aggregate item")
 
-proc encodeRedis*[T: SomeSignedInt | SomeUnsignedInt](x: T): RedisMessage =
-  result = RedisMessage(kind: REDIS_MESSAGE_INTEGER, integer: x)
-proc encodeRedis*[T: float | float32 | float64](x: T): RedisMessage =
-  result = RedisMessage(kind: REDIS_MESSAGE_DOUBLE, double: x)
-proc encodeRedis*(x: string): RedisMessage =
-  result = RedisMessage(kind: REDIS_MESSAGE_STRING)
-  result.str = x.option
-proc encodeRedis*(x: bool): RedisMessage =
-  result = RedisMessage(kind: REDIS_MESSAGE_BOOL, boolean: x)
-proc encodeRedis*(x: SecureHash): RedisMessage =
-  result = RedisMessage(kind: REDIS_MESSAGE_STRING, str: ($x).option)
+
+proc encodeRedis*[T: SomeSignedInt | SomeUnsignedInt](x: T): RedisMessage = RedisMessage(kind: REDIS_MESSAGE_INTEGER, integer: x)
+proc encodeRedis*[T: float | float32 | float64](x: T): RedisMessage = RedisMessage(kind: REDIS_MESSAGE_DOUBLE, double: x)
+proc encodeRedis*(x: string): RedisMessage = RedisMessage(kind: REDIS_MESSAGE_STRING, str: x.option)
+proc encodeRedis*(x: bool): RedisMessage = RedisMessage(kind: REDIS_MESSAGE_BOOL, boolean: x)
+proc encodeRedis*(x: SecureHash): RedisMessage = RedisMessage(kind: REDIS_MESSAGE_STRING, str: ($x).option)
 proc encodeRedis*[T](x: openArray[T]): RedisMessage =
   result = RedisMessage(kind: REDIS_MESSAGE_ARRAY, arr: @[])
   for v in x:
@@ -398,11 +408,21 @@ proc encodeRedis*[T](x: array[0..0, (string, T)]): RedisMessage =
   result = RedisMessage(kind: REDIS_MESSAGE_MAP, map: initTable[string, RedisMessage]())
   result.map[x[0][0]] = x[0][1].encodeRedis()
 
+
+proc encodeArg*(x: RedisMessage): RedisMessage = x
+proc encodeArg*(x: string): RedisMessage = x.encodeRedis()
+proc encodeArg*(x: SomeNumber): RedisMessage = RedisMessage(kind: REDIS_MESSAGE_STRING, str: some($x))
+proc encodeArg*(x: bool): RedisMessage = RedisMessage(kind: REDIS_MESSAGE_STRING, str: some(if x: "1" else: "0"))
+proc encodeArg*(x: SecureHash): RedisMessage = x.encodeRedis()
+
+
 const INDENT = 2
+
 
 proc indent(s: var string, i: int, nextLine: bool) =
   if nextLine:
     s.add(spaces(i))
+
 
 proc incIndent(curr: int, nextLine: bool): int =
   if nextLine: 
@@ -410,8 +430,10 @@ proc incIndent(curr: int, nextLine: bool): int =
   else:
     result = INDENT
 
+
 proc nl(s: var string, nextLine: bool) =
   s.add(if nextLine: "\n" else: " ")
+
 
 proc escapeString(s: string; result: var string) =
   result.add("\"")
@@ -440,6 +462,7 @@ proc escapeString(s: string; result: var string) =
     else: 
       result.add(c)
   result.add("\"")
+
 
 proc toText(result: var string, redisMessage: RedisMessage, nextLine = true, currIndent = 0, isArray = false) =
   case redisMessage.kind
