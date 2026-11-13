@@ -63,7 +63,7 @@ proc copy*(redis: Redis, source, destination: string, db: int = -1, replace: boo
   result = newRedisRequest[RedisRequestT[RedisIntBool]](redis)
   result.addCmd("COPY", source, destination)
   if db >= 0:
-    result.add(db)
+    result.add("DB", db)
   if replace:
     result.add("REPLACE")
 
