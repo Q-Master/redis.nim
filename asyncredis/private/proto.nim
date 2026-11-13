@@ -57,7 +57,71 @@ type
       bignum*: string
     of REDIS_MESSAGE_ATTRS:
       discard
-    
+
+
+proc hash*(msg: RedisMessage): Hash {.noSideEffect.} =
+  if msg.isNil:
+    return hash(0)
+  result = hash(msg.kind)
+  case msg.kind
+  of REDIS_MESSAGE_ERROR:
+    result = result !& hash(msg.error)
+  of REDIS_MESSAGE_INTEGER:
+    result = result !& hash(msg.integer)
+  of REDIS_MESSAGE_DOUBLE:
+    result = result !& hash(msg.double)
+  of REDIS_MESSAGE_NIL, REDIS_MESSAGE_ATTRS:
+    discard
+  of REDIS_MESSAGE_SIMPLESTRING, REDIS_MESSAGE_STRING, REDIS_MESSAGE_VERB:
+    result = result !& hash(msg.str)
+  of REDIS_MESSAGE_ARRAY, REDIS_MESSAGE_PUSH:
+    for e in msg.arr:
+      result = result !& hash(e)
+  of REDIS_MESSAGE_MAP:
+    var h: int = 0
+    for k, v in msg.map:
+      h = h xor int(hash(k) !& hash(v))
+    result = result !& Hash(h)
+  of REDIS_MESSAGE_SET:
+    var h: int = 0
+    for e in msg.hashSet:
+      h = h xor int(hash(e))
+    result = result !& Hash(h)
+  of REDIS_MESSAGE_BOOL:
+    result = result !& hash(msg.boolean)
+  of REDIS_MESSAGE_BIGNUM:
+    result = result !& hash(msg.bignum)
+  result = !$result
+
+
+proc `==`*(a, b: RedisMessage): bool {.noSideEffect.} =
+  if a.isNil or b.isNil:
+    return a.isNil and b.isNil
+  if a.kind != b.kind:
+    return false
+  case a.kind
+  of REDIS_MESSAGE_ERROR:
+    result = a.error == b.error
+  of REDIS_MESSAGE_INTEGER:
+    result = a.integer == b.integer
+  of REDIS_MESSAGE_DOUBLE:
+    result = a.double == b.double
+  of REDIS_MESSAGE_NIL, REDIS_MESSAGE_ATTRS:
+    result = true
+  of REDIS_MESSAGE_SIMPLESTRING, REDIS_MESSAGE_STRING, REDIS_MESSAGE_VERB:
+    result = a.str == b.str
+  of REDIS_MESSAGE_ARRAY, REDIS_MESSAGE_PUSH:
+    result = a.arr == b.arr
+  of REDIS_MESSAGE_MAP:
+    result = a.map == b.map
+  of REDIS_MESSAGE_SET:
+    result = a.hashSet == b.hashSet
+  of REDIS_MESSAGE_BOOL:
+    result = a.boolean == b.boolean
+  of REDIS_MESSAGE_BIGNUM:
+    result = a.bignum == b.bignum
+
+
 proc encodeRedis*[T: SomeSignedInt | SomeUnsignedInt](x: T): RedisMessage
 proc encodeRedis*[T: float | float32 | float64](x: T): RedisMessage
 proc encodeRedis*(x: string): RedisMessage
@@ -221,8 +285,6 @@ proc toJson*(redisMessage: RedisMessage): JsonNode =
 
 #------- pvt
 
-proc hash*(msg: RedisMessage): Hash =
-  result = cast[Hash](cast[uint](msg) shr 3)
 
 template toBiggestInt(item: string): BiggestInt =
   let tmp = parseBiggestInt(item)

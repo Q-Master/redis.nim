@@ -129,3 +129,35 @@ suite "Protocol":
   test "parse VERB valid":
     let m = waitFor parseWire("=9\r\ntxt:hello\r\n")
     check m.kind == REDIS_MESSAGE_VERB and m.str.get() == "txt:hello"
+
+  test "equal values equal and hash equally":
+    let a = RedisMessage(kind: REDIS_MESSAGE_STRING, str: some("x"))
+    let b = RedisMessage(kind: REDIS_MESSAGE_STRING, str: some("x"))
+    check a == b
+    check hash(a) == hash(b)
+
+  test "different kinds not equal":
+    let i = RedisMessage(kind: REDIS_MESSAGE_INTEGER, integer: 1)
+    let s = RedisMessage(kind: REDIS_MESSAGE_STRING, str: some("1"))
+    check i != s
+
+  test "SET dedups equal values":
+    var hs = initHashSet[RedisMessage]()
+    hs.incl(RedisMessage(kind: REDIS_MESSAGE_STRING, str: some("x")))
+    hs.incl(RedisMessage(kind: REDIS_MESSAGE_STRING, str: some("x")))
+    check hs.len == 1
+    check hs.contains(RedisMessage(kind: REDIS_MESSAGE_STRING, str: some("x")))
+
+  test "nested array equality":
+    let a = RedisMessage(kind: REDIS_MESSAGE_ARRAY, arr: @[RedisMessage(kind: REDIS_MESSAGE_INTEGER, integer: 1)])
+    let b = RedisMessage(kind: REDIS_MESSAGE_ARRAY, arr: @[RedisMessage(kind: REDIS_MESSAGE_INTEGER, integer: 1)])
+    check a == b and hash(a) == hash(b)
+
+  test "MAP hash order-independent":
+    var m1 = RedisMessage(kind: REDIS_MESSAGE_MAP, map: initTable[string, RedisMessage]())
+    m1.map["a"] = RedisMessage(kind: REDIS_MESSAGE_INTEGER, integer: 1)
+    m1.map["b"] = RedisMessage(kind: REDIS_MESSAGE_INTEGER, integer: 2)
+    var m2 = RedisMessage(kind: REDIS_MESSAGE_MAP, map: initTable[string, RedisMessage]())
+    m2.map["b"] = RedisMessage(kind: REDIS_MESSAGE_INTEGER, integer: 2)
+    m2.map["a"] = RedisMessage(kind: REDIS_MESSAGE_INTEGER, integer: 1)
+    check m1 == m2 and hash(m1) == hash(m2)
