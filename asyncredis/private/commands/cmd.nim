@@ -160,10 +160,13 @@ proc execute*(req: RedisRequestT[uint16]): Future[uint16] {.async.} =
   let res = await cast[RedisRequest](req).execute()
   result = res.integer.uint16
 
+template isNilReply(res: RedisMessage): bool =
+  res.kind == REDIS_MESSAGE_NIL or
+  (res.kind == REDIS_MESSAGE_STRING and res.str.isNone)
 
 proc execute*(req: RedisRequestT[Option[int64]]): Future[Option[int64]] {.async.} =
   let res = await cast[RedisRequest](req).execute()
-  if res.kind in [REDIS_MESSAGE_NIL, REDIS_MESSAGE_STRING]:
+  if res.isNilReply:
     result = int64.none
   else:
     result = res.integer.option
@@ -171,7 +174,7 @@ proc execute*(req: RedisRequestT[Option[int64]]): Future[Option[int64]] {.async.
 
 proc execute*(req: RedisRequestT[Option[uint64]]): Future[Option[uint64]] {.async.} =
   let res = await cast[RedisRequest](req).execute()
-  if res.kind == REDIS_MESSAGE_NIL:
+  if res.isNilReply:
     result = uint64.none
   else:
     result = res.integer.uint64.option
@@ -179,7 +182,7 @@ proc execute*(req: RedisRequestT[Option[uint64]]): Future[Option[uint64]] {.asyn
 
 proc execute*(req: RedisRequestT[Option[int32]]): Future[Option[int32]] {.async.} =
   let res = await cast[RedisRequest](req).execute()
-  if res.kind == REDIS_MESSAGE_NIL:
+  if res.isNilReply:
     result = int32.none
   else:
     result = res.integer.int32.option
@@ -187,7 +190,7 @@ proc execute*(req: RedisRequestT[Option[int32]]): Future[Option[int32]] {.async.
 
 proc execute*(req: RedisRequestT[Option[uint32]]): Future[Option[uint32]] {.async.} =
   let res = await cast[RedisRequest](req).execute()
-  if res.kind == REDIS_MESSAGE_NIL:
+  if res.isNilReply:
     result = uint32.none
   else:
     result = res.integer.uint32.option
@@ -195,7 +198,7 @@ proc execute*(req: RedisRequestT[Option[uint32]]): Future[Option[uint32]] {.asyn
 
 proc execute*(req: RedisRequestT[Option[int16]]): Future[Option[int16]] {.async.} =
   let res = await cast[RedisRequest](req).execute()
-  if res.kind == REDIS_MESSAGE_NIL:
+  if res.isNilReply:
     result = int16.none
   else:
     result = res.integer.int16.option
@@ -203,7 +206,7 @@ proc execute*(req: RedisRequestT[Option[int16]]): Future[Option[int16]] {.async.
 
 proc execute*(req: RedisRequestT[Option[uint16]]): Future[Option[uint16]] {.async.} =
   let res = await cast[RedisRequest](req).execute()
-  if res.kind == REDIS_MESSAGE_NIL:
+  if res.isNilReply:
     result = uint16.none
   else:
     result = res.integer.uint16.option
@@ -216,7 +219,7 @@ proc execute*(req: RedisRequestT[RedisStrInt]): Future[int64] {.async.} =
 
 proc execute*(req: RedisRequestT[Option[RedisStrInt]]): Future[Option[int64]] {.async.} =
   let res = await cast[RedisRequest](req).execute()
-  if res.kind == REDIS_MESSAGE_NIL:
+  if res.isNilReply:
     result = int64.none
   else:
     if res.str.isSome:
@@ -237,7 +240,7 @@ proc execute*(req: RedisRequestT[RedisStrFloat]): Future[float] {.async.} =
 
 proc execute*(req: RedisRequestT[Option[RedisStrFloat]]): Future[Option[float]] {.async.} =
   let res = await cast[RedisRequest](req).execute()
-  if res.kind == REDIS_MESSAGE_NIL:
+  if res.isNilReply:
     result = float.none
   else:
     if res.str.isSome:
@@ -248,7 +251,7 @@ proc execute*(req: RedisRequestT[Option[RedisStrFloat]]): Future[Option[float]] 
 
 proc execute*(req: RedisRequestT[Option[string]]): Future[Option[string]] {.async.} =
   let res = await cast[RedisRequest](req).execute()
-  if res.kind == REDIS_MESSAGE_NIL:
+  if res.isNilReply:
     result = string.none
   else:
     result = res.str
