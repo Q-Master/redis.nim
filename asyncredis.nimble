@@ -1,6 +1,6 @@
 # Package
 description = "Pure Nim asyncronous driver for Redis DB"
-version     = "0.9.0"
+version     = "0.9.1"
 license     = "MIT"
 author      = "Vladimir Berezenko <qmaster2000@gmail.com>"
 
