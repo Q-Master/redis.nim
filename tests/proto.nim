@@ -84,3 +84,48 @@ suite "Protocol":
     var m = RedisMessage(kind: REDIS_MESSAGE_MAP, map: initTable[string, RedisMessage]())
     m.map["k"] = RedisMessage(kind: REDIS_MESSAGE_INTEGER, integer: 1)
     check wire(m.prepareRequest()) == "%1\r\n$1\r\nk\r\n:1\r\n"
+
+
+  proc parseWire(payload: string): Future[RedisMessage] {.async.} =
+    var listener = newAsyncSocket(buffered = false)
+    listener.setSockOpt(OptReuseAddr, true)
+    listener.bindAddr(Port(16380))
+    listener.listen()
+    proc serve() {.async.} =
+      let client = await listener.accept()
+      await client.send(payload)
+      client.close()
+    asyncCheck serve()
+    var pool = newRedis("localhost", 16380, 0, poolsize = 1, timeout = 2000)
+    await pool.connect()
+    let conn = await pool.acquire()
+    try:
+      result = await conn.parseResponse()
+    finally:
+      conn.release()
+      await pool.close()
+      listener.close()
+
+  test "parse BOOL valid":
+    let m = waitFor parseWire("#t\r\n")
+    check m.kind == REDIS_MESSAGE_BOOL and m.boolean
+
+  test "parse BOOL invalid single char":
+    expect RedisProtocolError:
+      discard waitFor parseWire("#x\r\n")
+
+  test "parse BOOL invalid length":
+    expect RedisProtocolError:
+      discard waitFor parseWire("#tt\r\n")
+
+  test "parse empty line":
+    expect RedisProtocolError:
+      discard waitFor parseWire("\r\n")
+
+  test "parse VERB missing separator":
+    expect RedisProtocolError:
+      discard waitFor parseWire("=4\r\nbad!\r\n")
+
+  test "parse VERB valid":
+    let m = waitFor parseWire("=9\r\ntxt:hello\r\n")
+    check m.kind == REDIS_MESSAGE_VERB and m.str.get() == "txt:hello"

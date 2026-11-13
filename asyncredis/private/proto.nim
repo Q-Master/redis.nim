@@ -71,10 +71,12 @@ proc processLineItem(resTyp: RedisMessageKind, item: string, key: bool): RedisMe
 proc processBulkItem(redis: RedisConn, resTyp: RedisMessageKind, item: string, key: bool): Future[RedisMessage] {.async.}
 proc processAggregateItem(redis: RedisConn, resTyp: RedisMessageKind, item: string): Future[RedisMessage] {.async.}
 proc parseResponse*(redis: RedisConn, key: bool = false): Future[RedisMessage] {.async.} =
+  var tp: RedisMessageKind
   while true:
     # We are skipping the ATTRIBUTE type of redis reply always.
     let response = await redis.readLine()
-    var tp: RedisMessageKind
+    if response.len == 0:
+      raise newException(RedisProtocolError, "Empty response line")
     case response[0]
     of '-':
       tp = REDIS_MESSAGE_ERROR
@@ -243,7 +245,7 @@ proc processLineItem(resTyp: RedisMessageKind, item: string, key: bool): RedisMe
     of REDIS_MESSAGE_DOUBLE:
       result.double = parseFloat(item)
     of REDIS_MESSAGE_BOOL:
-      if item.len != 1 and item notin ["t", "T", "f", "F"]:
+      if item notin ["t", "T", "f", "F"]:
         raise newException(RedisProtocolError, "Bad BOOL value")
       result.boolean = item in ["T", "t"]
     of REDIS_MESSAGE_BIGNUM:
@@ -267,6 +269,8 @@ proc processLineItem(resTyp: RedisMessageKind, item: string, key: bool): RedisMe
 proc processBulkItem(redis: RedisConn, resTyp: RedisMessageKind, item: string, key: bool): Future[RedisMessage] {.async.} =
   result = RedisMessage(kind: resTyp)
   let stringSize = toBiggestInt(item)
+  if stringSize < -1:
+    raise newException(RedisProtocolError, "Bad bulk string length")
   if stringSize == -1:
     if key:
       raise newException(RedisProtocolError, "Map key can't be nil")
@@ -277,7 +281,7 @@ proc processBulkItem(redis: RedisConn, resTyp: RedisMessageKind, item: string, k
     result.str = s.option()
     if s.len != stringSize:
       raise newException(RedisProtocolError, "String/verb length is wrong")
-    if result.kind == REDIS_MESSAGE_VERB and str.len < 6 and str[3] != ':':
+    if result.kind == REDIS_MESSAGE_VERB and (str.len < 6 or str[3] != ':'):
       raise newException(RedisProtocolError, "Verbatim string 4 bytes of content type are missing or incorrectly encoded. length is wrong")
 
 proc processAggregateItem(redis: RedisConn, resTyp: RedisMessageKind, item: string): Future[RedisMessage] {.async.} =
