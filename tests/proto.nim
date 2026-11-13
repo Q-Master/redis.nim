@@ -1,12 +1,9 @@
 import unittest
-import std/[asyncdispatch, asyncnet, strutils, options]
+import std/[asyncdispatch, asyncnet, strutils, options, tables, sets]
 import asyncredis/private/commands/cmd
 import asyncredis/private/connection
 import asyncredis/private/proto
 import asyncredis/private/exceptions
-
-
-const REDIS_HOST {.strdefine.} = "localhost"
 
 
 suite "Protocol":
@@ -59,7 +56,7 @@ suite "Protocol":
     
     proc main() {.async.} =
       asyncCheck(server())
-      var connection = newRedis(REDIS_HOST, 16379, 0, poolsize=2, timeout=5000)
+      var connection = newRedis("localhost", 16379, 0, poolsize=2, timeout=5000)
       try:
         await connection.connect()
         connection.withRedis:
@@ -71,3 +68,19 @@ suite "Protocol":
         fail()
       await connection.close()
     waitFor(main())
+
+  proc wire(parts: seq[string]): string = parts.join("\r\n") & "\r\n"
+
+  test "prepareRequest RESP3 encodingBOOL":
+    check wire(RedisMessage(kind: REDIS_MESSAGE_BOOL, boolean: true).prepareRequest()) == "#t\r\n"
+    check wire(RedisMessage(kind: REDIS_MESSAGE_BOOL, boolean: false).prepareRequest()) == "#f\r\n"
+
+  test "prepareRequest RESP3 encoding SET":
+    var s = RedisMessage(kind: REDIS_MESSAGE_SET, hashSet: initHashSet[RedisMessage]())
+    s.hashSet.incl(RedisMessage(kind: REDIS_MESSAGE_STRING, str: some("a")))
+    check wire(s.prepareRequest()) == "~1\r\n$1\r\na\r\n"
+
+  test "prepareRequest RESP3 encoding MAP":
+    var m = RedisMessage(kind: REDIS_MESSAGE_MAP, map: initTable[string, RedisMessage]())
+    m.map["k"] = RedisMessage(kind: REDIS_MESSAGE_INTEGER, integer: 1)
+    check wire(m.prepareRequest()) == "%1\r\n$1\r\nk\r\n:1\r\n"

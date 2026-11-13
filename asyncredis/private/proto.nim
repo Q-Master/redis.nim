@@ -156,19 +156,16 @@ proc prepareRequest*(request: RedisMessage): seq[string] =
     for elem in request.arr:
       result.add(elem.prepareRequest())
   of REDIS_MESSAGE_MAP:
-    result.add("%")
-    result.add($request.map.len)
+    result.add("%" & $request.map.len)
     for k,v in request.map:
       k.encodeString()
       result.add(v.prepareRequest())
   of REDIS_MESSAGE_SET:
-    result.add("~")
-    result.add($request.hashSet.len)
+    result.add("~" & $request.hashSet.len)
     for elem in request.hashSet:
       result.add(elem.prepareRequest())
   of REDIS_MESSAGE_BOOL:
-    result.add("#")
-    result.add(if request.boolean: "t" else: "f")
+    result.add("#" & (if request.boolean: "t" else: "f"))
   of REDIS_MESSAGE_VERB:
     request.str.encodeString("=")
   of REDIS_MESSAGE_BIGNUM:
