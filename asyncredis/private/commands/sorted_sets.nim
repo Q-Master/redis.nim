@@ -522,7 +522,7 @@ proc zUnion*(redis: Redis, key: string, keys: varargs[string]): RedisZIURequest 
 
 
 # ZUNIONSTORE destination numkeys key [key ...] [WEIGHTS weight [weight ...]] [AGGREGATE SUM|MIN|MAX] 
-proc zUinonStore*(redis: Redis, destKey: string, key: string, keys: varargs[string]): RedisZIUWithStoreRequest =
+proc zUnionStore*(redis: Redis, destKey: string, key: string, keys: varargs[string]): RedisZIUWithStoreRequest =
   result = newRedisZIUWithStoreRequest(redis)
   result.keysN = keys.len+1
   result.addCmd("ZUNIONSTORE", destKey, $result.keysN, key)
