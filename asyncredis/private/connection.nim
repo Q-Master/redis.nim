@@ -163,35 +163,38 @@ proc newSocket(timeout: int): AsyncBufferedSocket =
   newAsyncBufferedSocket(inBufSize = REDIS_READER_MAX_BUF, timeout = (if timeout > 0: timeout else: -1))
 
 
-proc respCommand(args: openArray[string]): string =
+proc handshakeCommand(conn: RedisConn, args: seq[string]) {.async.} =
   # need here to not import cmds
-  result = "*" & $args.len & "\r\L"
-  for a in args:
-    result.add("$" & $a.len & "\r\L")
-    result.add(a)
-    result.add("\r\L")
+  transportGuard(conn):
+    var arguments = "*" & $args.len & "\r\L"
+    for a in args:
+      arguments.add("$" & $a.len & "\r\L")
+      arguments.add(a)
+      arguments.add("\r\L")
+    discard await conn.sock.send(arguments)
+  let resp = await conn.readLine()
+  if resp.len == 0:
+    raise newException(RedisProtocolError, "Empty reply to " & args[0])
+  case resp[0]
+  of '+':
+    discard                                   # успех (+OK)
+  of '-':
+    raiseException(resp[1 .. ^1])             # точный тип ошибки из кода
+  else:
+    raise newException(RedisProtocolError, "Unexpected reply to " & args[0] & ": " & resp)
 
 
 proc handshake(pool: Redis, conn: RedisConn) {.async.} =
-  # need here to not import cmds
   # RESP2-handshake: AUTH + SELECT
   if pool.needAuth:
     var args = @["AUTH"]
     if not pool.username.isNil:
       args.add(pool.username[])
     args.add(pool.password[])
-    transportGuard(conn):
-      discard await conn.sock.send(respCommand(args))
-    let resp = await conn.readLine()
-    if resp.len == 0 or resp[0] != '+':
-      raise newException(RedisAuthError, "AUTH failed: " & resp)
+    await conn.handshakeCommand(args)
     conn.authenticated = true
   if pool.db != 0:
-    transportGuard(conn):
-      discard await conn.sock.send(respCommand(["SELECT", $pool.db]))
-    let resp = await conn.readLine()
-    if resp.len == 0 or resp[0] != '+':
-      raise newException(RedisConnectionError, "SELECT failed: " & resp)
+    await conn.handshakeCommand(@["SELECT", $pool.db])
 
 
 proc connectConn(pool: Redis, conn: RedisConn) {.async.} =
