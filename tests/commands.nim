@@ -2,6 +2,10 @@ import unittest
 import std/[asyncdispatch, times, options, tables]
 import asyncredis/asyncredis
 
+
+const REDIS_HOST {.strdefine.} = "localhost"
+
+
 suite "Redis commands":
   const KEY1 = "KEY1"
   const KEY2 = "KEY2"
@@ -13,7 +17,7 @@ suite "Redis commands":
     
   setup:
     proc killAll() {.async.} =
-      var connection = newRedis("localhost", 6379, 0, poolsize=2, timeout=5000)
+      var connection = newRedis(REDIS_HOST, 6379, 0, poolsize=2, timeout=5000)
       try:
         await connection.connect()
         let x {.used.} = await connection.flushAll(REDIS_FLUSH_SYNC)
@@ -27,7 +31,7 @@ suite "Redis commands":
     const PING_TEST_MSG = "Test Message"
     const TEST_USER_NAME = "redis.nim"
     proc testConnection() {.async.} =
-      var connection = newRedis("localhost", 6379, 0, poolsize=2, timeout=5000)
+      var connection = newRedis(REDIS_HOST, 6379, 0, poolsize=2, timeout=5000)
       try:
         await connection.connect()
         # PING [message] 
@@ -69,7 +73,7 @@ suite "Redis commands":
   test "Strings commands":
     const CHECK_STRING = "Test stringS"
     proc testStrings() {.async.} =
-      var connection = newRedis("localhost", 6379, 0, poolsize=2, timeout=5000)
+      var connection = newRedis(REDIS_HOST, 6379, 0, poolsize=2, timeout=5000)
       try:
         var boolRepl: bool
         var optStrRepl: Option[string]
@@ -180,7 +184,7 @@ suite "Redis commands":
   test "Keys commands":
     const KEYS_PATTERN = "KEY[1-5]"
     proc testKeys() {.async.} =
-      var connection = newRedis("localhost", 6379, 0, poolsize=2, timeout=5000)
+      var connection = newRedis(REDIS_HOST, 6379, 0, poolsize=2, timeout=5000)
       try:
         var boolRepl: bool
         var optStrRepl: Option[string]
@@ -234,7 +238,7 @@ suite "Redis commands":
 
   test "Lists commands":
     proc testLists() {.async.} =
-      var connection = newRedis("localhost", 6379, 0, poolsize=2, timeout=5000)
+      var connection = newRedis(REDIS_HOST, 6379, 0, poolsize=2, timeout=5000)
       try:
         var boolRepl: bool
         var optStrRepl: Option[string]
@@ -349,7 +353,7 @@ suite "Redis commands":
 
   test "Hashes commands":
     proc testHashes() {.async.} =
-      var connection = newRedis("localhost", 6379, 0, poolsize=2, timeout=5000)
+      var connection = newRedis(REDIS_HOST, 6379, 0, poolsize=2, timeout=5000)
       try:
         var boolRepl: bool
         var optStrRepl: Option[string]
@@ -445,7 +449,7 @@ suite "Redis commands":
   
   test "Sets commands":
     proc testSets() {.async.} =
-      var connection = newRedis("localhost", 6379, 0, poolsize=2, timeout=5000)
+      var connection = newRedis(REDIS_HOST, 6379, 0, poolsize=2, timeout=5000)
       try:
         var boolRepl: bool
         var optStrRepl: Option[string]
@@ -544,7 +548,7 @@ suite "Redis commands":
 
   test "Sorted sets commands":
     proc testSortedSets() {.async.} =
-      var connection = newRedis("localhost", 6379, 0, poolsize=2, timeout=5000)
+      var connection = newRedis(REDIS_HOST, 6379, 0, poolsize=2, timeout=5000)
       try:
         var optStrRepl: Option[string]
         var intRepl: int64

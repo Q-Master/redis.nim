@@ -5,6 +5,10 @@ import asyncredis/private/connection
 import asyncredis/private/proto
 import asyncredis/private/exceptions
 
+
+const REDIS_HOST {.strdefine.} = "localhost"
+
+
 suite "Protocol":
   setup:
     discard
@@ -55,7 +59,7 @@ suite "Protocol":
     
     proc main() {.async.} =
       asyncCheck(server())
-      var connection = newRedis("localhost", 16379, 0, poolsize=2, timeout=5000)
+      var connection = newRedis(REDIS_HOST, 16379, 0, poolsize=2, timeout=5000)
       try:
         await connection.connect()
         connection.withRedis:
