@@ -1,6 +1,6 @@
 import std/[unittest, strutils]
 import asyncdispatch
-import asyncredis/asyncredis
+import asyncredis
 
 
 const REDIS_HOST {.strdefine.} = "localhost"

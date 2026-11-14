@@ -1,9 +1,9 @@
 import unittest
 import std/[asyncdispatch, asyncnet, strutils, options, tables, sets]
-import asyncredis/private/commands/cmd
-import asyncredis/private/connection
-import asyncredis/private/proto
-import asyncredis/private/exceptions
+import asyncredis/commands/cmd
+import asyncredis/connection
+import asyncredis/proto
+import asyncredis/exceptions
 
 
 suite "Protocol":

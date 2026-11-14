@@ -1,5 +1,5 @@
 import std/[unittest]
-import asyncredis/private/exceptions
+import asyncredis/exceptions
 
 suite "Redis exceptions":
   setup:

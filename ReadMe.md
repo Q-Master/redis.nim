@@ -1,17 +1,19 @@
 # Asyncronous Redis Pure Nim library
 This is a asyncronous driver to use with [Redis Database](https://redis.io).
 
-Driver features
+AsyncRedis features
 -----------------
-This table represents Redis features and their implementation status within
-`redis.redis` Nim module.
+Library almost completely implements common use features including authorization, key commands,
+lists, hashes, sets ans sorted sets.
+There's a table representing implementation status within
+`asyncredis` Nim module.
 
 | Commands    | Status             |  Notes |
 |------------:|:-------------------|:-------|
-| Connection  | Tested and working | Some commands not tested |
+| Connection  | Tested and working | |
 | String      | Tested and working | |
 | Keys        | Tested and working | Not tested: sort |
-| Lists       | Tested and working | Not tested: blocking ops |
+| Lists       | Tested and working | |
 | Hashes      | Tested and working | |
 | Sets        | Tested and working | |
 | Sorted Sets | Tested and working | |
