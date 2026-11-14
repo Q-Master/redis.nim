@@ -66,11 +66,19 @@ proc updateRedisCursor(cursor: RedisCursorRequest, id: string)
 proc encodeCommand(cmd: string, args: varargs[RedisMessage, encodeRedis]): RedisMessage
 
 
+proc addArg(dst: var seq[RedisMessage], arg: RedisMessage) =
+  if arg.kind == REDIS_MESSAGE_ARRAY:
+    for e in arg.arr:
+      dst.addArg(e)
+  else:
+    dst.add(arg)
+
+
 proc add*[T: RedisRequest](req: T, data: RedisMessage): T {.discardable.} =
   result = req
   if result.req.isNil():
     result.req = RedisMessage(kind: REDIS_MESSAGE_ARRAY)
-  result.req.arr.add(data)
+  result.req.arr.addArg(data)
 
 
 proc add*[T: RedisRequest](req: T, data: varargs[RedisMessage, encodeArg]): T {.discardable.} =
@@ -79,7 +87,7 @@ proc add*[T: RedisRequest](req: T, data: varargs[RedisMessage, encodeArg]): T {.
     result.add(x)
 
 
-proc insert*[T: RedisRequest](req: T, pos: Natural, data: varargs[RedisMessage, encodeRedis]): T {.discardable.} =
+proc insert*[T: RedisRequest](req: T, pos: int, data: varargs[RedisMessage, encodeArg]): T {.discardable.} =
   result = req
   var i = pos
   if req.req.isNil():
@@ -87,8 +95,11 @@ proc insert*[T: RedisRequest](req: T, pos: Natural, data: varargs[RedisMessage, 
   if req.req.arr.len < pos:
     req.add(data=data)
   else:
+    var flat: seq[RedisMessage] = @[]
     for d in data:
-      req.req.arr.insert(d, i)
+      flat.addArg(d)
+    for e in flat:
+      req.req.arr.insert(e, i)
       i.inc(1)
 
 
@@ -456,8 +467,8 @@ proc encodeCommand(cmd: string, args: varargs[RedisMessage, encodeRedis]): Redis
   result = RedisMessage(kind: REDIS_MESSAGE_ARRAY)
   for c in cmd.splitWhitespace():
     result.arr.add(c.encodeRedis())
-  if args.len > 0:
-    result.arr = result.arr & @args
+  for a in args:
+    result.arr.addArg(a)
 
 
 proc updateRedisCursor(cursor: RedisCursorRequest, id: string) =

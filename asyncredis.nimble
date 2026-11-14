@@ -1,15 +1,14 @@
 # Package
 description = "Pure Nim asyncronous driver for Redis DB"
-version     = "0.9.1"
+version     = "0.9.2"
 license     = "MIT"
 author      = "Vladimir Berezenko <qmaster2000@gmail.com>"
 
 # Dependencies
-requires "nim >= 2.0", "networkutils >= 0.7.1"
+requires "nim >= 2.0", "networkutils >= 0.7.2"
 
 task test, "tests":
-  let tests = @["connection", "proto", "commands"]
-  #let tests = @["commands"]
+  let tests = @["connection", "proto", "commands", "exceptions"]
   for test in tests:
     echo "Running " & test & " test"
     try:

@@ -9,12 +9,12 @@ This table represents Redis features and their implementation status within
 | Commands    | Status             |  Notes |
 |------------:|:-------------------|:-------|
 | Connection  | Tested and working | Some commands not tested |
-| String      | Tested and working | Not tested: timeouts, scan |
-| Keys        | Tested and working | Not tested: timeouts, sort, scan |
-| Lists       | Tested and working | Not tested: blocking ops, scan |
-| Hashes      | Tested and working | Not tested: scan |
-| Sets        | Tested and working | Not tested: scan |
-| Sorted Sets | Tested and working | Not tested: scan |
+| String      | Tested and working | |
+| Keys        | Tested and working | Not tested: sort |
+| Lists       | Tested and working | Not tested: blocking ops |
+| Hashes      | Tested and working | |
+| Sets        | Tested and working | |
+| Sorted Sets | Tested and working | |
 | Scripting   | Not tested         | Not stable yet |
 | Server      | Tested and working | Only FLUSHALL command implemented yet |
 

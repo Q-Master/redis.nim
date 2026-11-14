@@ -10,30 +10,83 @@ suite "Protocol":
   setup:
     discard
 
-  test "Encoding":
+  test "Encoding: command args are flat bulk strings":
     var req = RedisRequest.new
     req.initRedisRequest(nil)
     req.addCmd("PONG")
-    check(req.req.kind == REDIS_MESSAGE_ARRAY)
-    check(req.req.arr[0].str == "PONG".option)
+    check req.req.kind == REDIS_MESSAGE_ARRAY
+    check req.req.arr[0].str == "PONG".option
+
+    req.addCmd("TEST", 1, 1.0, "string", true)
+    check req.req.arr.len == 5
+    check req.req.arr[0].str.get() == "TEST"
+    for i in 1 .. 4:
+      check req.req.arr[i].kind == REDIS_MESSAGE_STRING
+    check req.req.arr[1].str.get() == "1"
+    check req.req.arr[2].str.get() == "1.0"
+    check req.req.arr[3].str.get() == "string"
+    check req.req.arr[4].str.get() == "1"
+
+    req.extend([1, 2, 3, 4, 5])
+    check req.req.arr.len == 10
+    check req.req.arr[5].str.get() == "1"
+    check req.req.arr[9].str.get() == "5"
+
+    let parts = req.req.prepareRequest()
+    check parts[0] == "*10"
+    for i in countup(1, parts.len - 1, 2):
+      check parts[i][0] == '$'
+
+  test "Encoding: encodeRedis preserves RESP types":
+    let msg = RedisMessage(kind: REDIS_MESSAGE_ARRAY, arr: @[
+      encodeRedis(1), encodeRedis(1.0), encodeRedis("string"),
+      encodeRedis(true), encodeRedis([1, 2, 3, 4, 5])])
+    check msg.arr[0].kind == REDIS_MESSAGE_INTEGER and msg.arr[0].integer == 1
+    check msg.arr[1].kind == REDIS_MESSAGE_DOUBLE and msg.arr[1].double == 1.0
+    check msg.arr[2].kind == REDIS_MESSAGE_STRING and msg.arr[2].str.get() == "string"
+    check msg.arr[3].kind == REDIS_MESSAGE_BOOL and msg.arr[3].boolean
+    check msg.arr[4].kind == REDIS_MESSAGE_ARRAY
+    check msg.arr[4].arr.len == 5
+    check msg.arr[4].arr[0].integer == 1
+    check msg.arr[4].arr[4].integer == 5
+
+  test "Encoding: command array args are flattened":
+    var req = RedisRequest.new
+    req.initRedisRequest(nil)
+    req.addCmd("MGET", ["k1", "k2", "k3"])
+    check req.req.arr.len == 4
+    check req.req.arr[0].str.get() == "MGET"
+    check req.req.arr[3].str.get() == "k3"
+    for e in req.req.arr:
+      check e.kind == REDIS_MESSAGE_STRING
+
+  test "Encoding: command mixed scalar and array args":
+    var req = RedisRequest.new
+    req.initRedisRequest(nil)
     req.addCmd("TEST", 1, 1.0, "string", true, [1,2,3,4,5])
-    check(req.req.kind == REDIS_MESSAGE_ARRAY)
-    check(req.req.arr[0].str.get() == "TEST")
-    check(req.req.arr[1].kind == REDIS_MESSAGE_INTEGER)
-    check(req.req.arr[1].integer == 1)
-    check(req.req.arr[2].kind == REDIS_MESSAGE_DOUBLE)
-    check(req.req.arr[2].double == 1.0)
-    check(req.req.arr[3].kind == REDIS_MESSAGE_STRING)
-    check(req.req.arr[3].str.get() == "string")
-    check(req.req.arr[4].kind == REDIS_MESSAGE_BOOL)
-    check(req.req.arr[4].boolean == true)
-    check(req.req.arr[5].kind == REDIS_MESSAGE_ARRAY)
-    check(req.req.arr[5].arr[0].integer == 1)
-    check(req.req.arr[5].arr[1].integer == 2)
-    check(req.req.arr[5].arr[2].integer == 3)
-    check(req.req.arr[5].arr[3].integer == 4)
-    check(req.req.arr[5].arr[4].integer == 5)
-  
+    check req.req.arr.len == 10
+    check req.req.arr[1].str.get() == "1"
+    check req.req.arr[4].str.get() == "1"
+    check req.req.arr[9].str.get() == "5"
+    let parts = req.req.prepareRequest()
+    check parts[0] == "*10"
+    for i in countup(1, parts.len - 1, 2):
+      check parts[i][0] == '$'
+
+  test "Encoding: command nested arrays flatten recursively":
+    var req = RedisRequest.new
+    req.initRedisRequest(nil)
+    req.addCmd("T", [[1,2],[3,4]])
+    check req.req.arr.len == 5
+    check req.req.arr[4].str.get() == "4"
+
+  test "Encoding: command args add and extend are equivalent for collections":
+    var a = RedisRequest.new; a.initRedisRequest(nil)
+    a.addCmd("DEL"); a.add(["k1","k2"])
+    var b = RedisRequest.new; b.initRedisRequest(nil)
+    b.addCmd("DEL"); b.extend(["k1","k2"])
+    check a.req == b.req
+
   test "Decoding":
     proc server() {.async.} =
       var sock = newAsyncSocket()

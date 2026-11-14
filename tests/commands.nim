@@ -890,22 +890,16 @@ suite "Redis commands":
         check n >= 20
         await pool.close()
       waitFor(tasyncFor())
-#[
-        let expTime = now()+2.seconds+500.milliseconds
-        replGet = await connection.getEx("KEY1").ex(initDuration(seconds=60)).execute()
-        replGet = await connection.getEx("KEY1").exAt(expTime.toTime()).execute()
-        replGet = await connection.getEx("KEY1").exAt(expTime).execute()
-        replGet = await connection.getEx("KEY1").px(initDuration(seconds=60)).execute()
-        replGet = await connection.getEx("KEY1").pxAt(expTime.toTime()).execute
-        replGet = await connection.getEx("KEY1").pxAt(expTime).execute()
-        msetRepl = await connection.setEx("KEY1", initDuration(seconds = 60), "Test")
-        msetRepl = await connection.setEx("KEY1", expTime.toTime(), "Test")
-        msetRepl = await connection.setEx("KEY1", expTime, "Test")
-        msetRepl = await connection.psetEx("KEY1", initDuration(seconds = 60), "Test")
-        msetRepl = await connection.psetEx("KEY1", expTime.toTime(), "Test")
-        msetRepl = await connection.psetEx("KEY1", expTime, "Test")
 
-        let keysCur = connection.scan()
-        asyncFor key in keysCur:
-          echo key
-]#
+    test "MGET with array of keys":
+      proc tmgetarray() {.async.} =
+        let pool = newRedis(REDIS_HOST, 6379, 0, poolsize=1, timeout=5000)
+        await pool.connect()
+        discard await pool.flushAll(REDIS_FLUSH_SYNC)
+        discard await pool.mSet(("a","1"), ("b","2"))
+        var req = newRedisRequest[RedisArrayRequestT[Option[string]]](pool)
+        req.addCmd("MGET", ["a", "b", "missing"])
+        check (await req.execute()) == @["1".option, "2".option, string.none]
+        await pool.close()
+      waitFor(tmgetarray())
+

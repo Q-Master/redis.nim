@@ -414,6 +414,15 @@ proc encodeArg*(x: string): RedisMessage = x.encodeRedis()
 proc encodeArg*(x: SomeNumber): RedisMessage = RedisMessage(kind: REDIS_MESSAGE_STRING, str: some($x))
 proc encodeArg*(x: bool): RedisMessage = RedisMessage(kind: REDIS_MESSAGE_STRING, str: some(if x: "1" else: "0"))
 proc encodeArg*(x: SecureHash): RedisMessage = x.encodeRedis()
+proc encodeArg*(x: openArray[byte]): RedisMessage =
+  var s = newStringUninit(x.len)
+  if x.len > 0:
+    copyMem(s[0].addr, x[0].unsafeAddr, x.len)
+  result = RedisMessage(kind: REDIS_MESSAGE_STRING, str: some(s))
+proc encodeArg*[T](x: openArray[T]): RedisMessage =
+  result = RedisMessage(kind: REDIS_MESSAGE_ARRAY, arr: @[])
+  for v in x:
+    result.arr.add(encodeArg(v))
 
 
 const INDENT = 2
